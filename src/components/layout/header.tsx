@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetDescription, SheetTrigger } from '@/components/ui/sheet';
 import { Menu, BarChartBig } from 'lucide-react';
-import Sidebar from './sidebar'; // Import sidebar for mobile sheet
+import SidebarContentInternal from './sidebar-content-internal'; // Import the internal content
 
 export default function Header() {
   return (
@@ -10,18 +10,17 @@ export default function Header() {
       <div className="flex items-center">
         <Sheet>
           <SheetTrigger asChild>
+            {/* Button visible only on screens smaller than sm (mobile) */}
             <Button variant="outline" size="icon" className="sm:hidden">
               <Menu className="h-5 w-5" />
               <span className="sr-only">Ouvrir le menu</span>
             </Button>
           </SheetTrigger>
-          <SheetContent side="left" className="sm:hidden w-3/4 p-0 pt-10">
-            {/* Visible title for screen readers, but visually styled if needed or kept minimal */}
+          {/* SheetContent for mobile: hidden on sm+ screens, flex-column for layout */}
+          <SheetContent side="left" className="flex w-3/4 flex-col bg-card p-0 pt-10 sm:hidden">
             <SheetTitle className="sr-only">Menu Principal</SheetTitle>
-            {/* Optional: A brief description for screen readers if the title isn't enough context */}
             <SheetDescription className="sr-only">Naviguez à travers les sections de Lotocrack.</SheetDescription>
-            {/* Embed sidebar content directly for mobile */}
-            <Sidebar />
+            <SidebarContentInternal /> {/* Embed internal sidebar content */}
           </SheetContent>
         </Sheet>
         <Link href="/" className="ml-2 flex items-center gap-2 sm:ml-0" prefetch={false}>
