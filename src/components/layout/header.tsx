@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet'; // Added SheetTitle
 import { Menu, BarChartBig } from 'lucide-react';
 import Sidebar from './sidebar'; // Import sidebar for mobile sheet
 
@@ -16,6 +16,7 @@ export default function Header() {
             </Button>
           </SheetTrigger>
           <SheetContent side="left" className="sm:hidden w-3/4 p-0 pt-10">
+            <SheetTitle className="sr-only">Menu Principal</SheetTitle>
             {/* Embed sidebar content directly for mobile */}
             <Sidebar /> 
           </SheetContent>
