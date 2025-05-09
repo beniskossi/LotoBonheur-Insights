@@ -44,9 +44,12 @@
     "dotenv": "^16.5.0",
     "firebase": "^11.7.0",
     "genkit": "^1.8.0",
+    "jspdf": "^2.5.1",
+    "jspdf-autotable": "^3.8.2",
     "lucide-react": "^0.475.0",
     "next": "15.2.3",
     "patch-package": "^8.0.0",
+    "pdf-parse": "^1.1.1",
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",
     "react-dom": "^18.3.1",
@@ -66,3 +69,4 @@
     "typescript": "^5"
   }
 }
+
