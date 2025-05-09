@@ -5,14 +5,15 @@ import type { LotteryResult } from '@/types/lottery';
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { calculateLotteryStatistics, type LotteryStatisticsOutput } from '@/ai/flows/statistics-flow';
+import { calculateLotteryStatistics } from '@/ai/flows/statistics-flow';
+import type { LotteryStatisticsOutput } from '@/ai/flows/statistics-types'; // Correct type import
 import { getDrawNameBySlug } from '@/config/draw-schedule';
 import LoadingSpinner from '@/components/loading-spinner';
 import ErrorMessage from '@/components/error-message';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Info, ListOrdered, Sigma, PercentCircle as PercentIcon, TrendingUp } from "lucide-react"; // Using PercentCircle as PercentIcon
+import { Info, ListOrdered, Sigma, PercentCircle as PercentIcon, TrendingUp } from "lucide-react";
 
 interface ChartData {
   name: string;
@@ -64,21 +65,20 @@ export default function DetailedStatisticsPage() {
       const filteredResults = allResults.filter(result => result.draw_name === drawName);
       if (filteredResults.length > 0) {
         setIsLoadingStats(true);
-        setStats(null); // Reset previous stats
+        setStats(null); 
         calculateLotteryStatistics({ results: filteredResults, drawName })
           .then(setStats)
           .catch(err => {
             setError(`Erreur lors du calcul des statistiques détaillées: ${err.message}`);
             console.error(err);
-            setStats(null); // Ensure stats is null on error
+            setStats(null); 
           })
           .finally(() => setIsLoadingStats(false));
       } else {
-        // No results for this specific drawName, so no stats to calculate
         setStats(null); 
         setIsLoadingStats(false);
       }
-    } else if (!isLoadingData && drawName) { // Handle case where allResults might be empty from API
+    } else if (!isLoadingData && drawName) { 
         setStats(null);
         setIsLoadingStats(false);
     }
@@ -93,7 +93,7 @@ export default function DetailedStatisticsPage() {
         if (!isNaN(aNameNum) && !isNaN(bNameNum)) {
           return aNameNum - bNameNum;
         }
-        return b.frequency - a.frequency; // Fallback for non-numeric names, though not expected for these charts
+        return b.frequency - a.frequency;
       });
       
     if (chartData.length === 0) return <p className="text-sm text-muted-foreground mt-2 p-4 text-center">Aucune donnée disponible pour ce graphique.</p>;
@@ -126,10 +126,8 @@ export default function DetailedStatisticsPage() {
 
   if (isLoadingData || isLoadingStats) return <LoadingSpinner />;
   
-  // Error from fetching all results or calculating stats
   if (error && !stats) return <ErrorMessage title="Erreur de Données" message={error} />; 
   
-  // No specific data for this drawName to calculate stats, or allResults empty
   if (!stats && !isLoadingData && !isLoadingStats && drawName) {
      return (
         <div className="space-y-6 p-4">
@@ -148,7 +146,7 @@ export default function DetailedStatisticsPage() {
     );
   }
   
-  if (!stats) return <ErrorMessage title="Statistiques Non Disponibles" message={`Les statistiques détaillées pour ${drawName} n'ont pas pu être chargées.`} />; // Fallback if stats is null after loading
+  if (!stats) return <ErrorMessage title="Statistiques Non Disponibles" message={`Les statistiques détaillées pour ${drawName || 'ce tirage'} n'ont pas pu être chargées.`} />;
 
   return (
     <div className="space-y-8 p-4 md:p-6 lg:p-8">
@@ -249,4 +247,3 @@ export default function DetailedStatisticsPage() {
     </div>
   );
 }
-

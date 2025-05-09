@@ -21,6 +21,7 @@ import { getUniqueDrawNames } from "@/config/draw-schedule";
 import { format, parseISO, isValid, parse as dateParse } from 'date-fns';
 
 type LotteryResultWithId = LotteryResult & { clientId: string };
+const ADMIN_DATA_STORAGE_KEY = 'lotocrackAdminData';
 
 const lotteryResultSchema = z.object({
   draw_name: z.string().min(1, "Le nom du tirage est requis."),
@@ -45,6 +46,7 @@ export default function AdminPage() {
 
   const [adminData, setAdminData] = useState<LotteryResultWithId[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
+  const [initialLoadMessage, setInitialLoadMessage] = useState<string | null>(null);
   
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [viewCategory, setViewCategory] = useState<string>("all");
@@ -61,7 +63,7 @@ export default function AdminPage() {
 
   const drawNames = getUniqueDrawNames();
 
-  const { register, handleSubmit, control, reset, setValue, formState: { errors } } = useForm<LotteryFormValues>({
+  const { register, handleSubmit, control, reset, formState: { errors } } = useForm<LotteryFormValues>({
     resolver: zodResolver(lotteryResultSchema),
     defaultValues: {
       draw_name: drawNames.length > 0 ? drawNames[0] : "",
@@ -71,29 +73,55 @@ export default function AdminPage() {
     }
   });
   
-  const fetchAdminData = useCallback(async () => {
+  const fetchAndInitializeAdminData = useCallback(async () => {
     setIsLoadingData(true);
+    setInitialLoadMessage(null);
     try {
-      // This simulates fetching from a persistent store if one were implemented.
-      // For now, it could load from localStorage or just initialize as empty.
-      // Let's assume it's already managed by state and this is for re-fetching/initial load.
-      const response = await fetch('/api/results'); // Example: or load from where admin data is stored
-      if (!response.ok) throw new Error('Failed to fetch initial admin data');
+      // Try loading from localStorage first
+      const storedData = localStorage.getItem(ADMIN_DATA_STORAGE_KEY);
+      if (storedData) {
+        setAdminData(JSON.parse(storedData));
+        setInitialLoadMessage(`Données chargées depuis le stockage local (${JSON.parse(storedData).length} résultats). Cliquez sur rafraîchir pour récupérer les données de l'API.`);
+        setIsLoadingData(false);
+        return;
+      }
+
+      // If no localStorage data, fetch from API
+      const response = await fetch('/api/results'); 
+      if (!response.ok) {
+         const errorText = await response.text();
+        throw new Error(`Échec de la récupération des données initiales de l'API: ${response.status} ${errorText}`);
+      }
       const results: LotteryResult[] = await response.json();
-      // Ensure clientIds are unique for local state management
-      setAdminData(results.map(r => ({ ...r, clientId: r.clientId || `${r.draw_name}-${r.date}-${Math.random().toString(36).substr(2, 9)}` })));
+      if (Array.isArray(results)) {
+        const dataWithClientIds = results.map(r => ({ ...r, clientId: r.clientId || `${r.draw_name}-${r.date}-${Math.random().toString(36).substr(2, 9)}` }));
+        setAdminData(dataWithClientIds);
+        localStorage.setItem(ADMIN_DATA_STORAGE_KEY, JSON.stringify(dataWithClientIds));
+        setInitialLoadMessage(`${dataWithClientIds.length} résultats chargés depuis l'API et sauvegardés localement.`);
+      } else {
+        setAdminData([]);
+        setInitialLoadMessage("Aucun résultat valide retourné par l'API. Les données locales seront vides.");
+      }
     } catch (error) {
       toast({ title: "Erreur de chargement initial", description: (error as Error).message, variant: "destructive" });
-      // Initialize with empty if fetch fails to prevent app crash
       setAdminData([]); 
+      setInitialLoadMessage(`Erreur lors du chargement initial des données: ${(error as Error).message}`);
     } finally {
       setIsLoadingData(false);
     }
   }, [toast]);
 
   useEffect(() => {
-    fetchAdminData();
-  }, [fetchAdminData]);
+    fetchAndInitializeAdminData();
+  }, [fetchAndInitializeAdminData]);
+
+  // Save to localStorage whenever adminData changes
+  useEffect(() => {
+    if (!isLoadingData) { // Avoid saving during initial load if data is coming from API
+      localStorage.setItem(ADMIN_DATA_STORAGE_KEY, JSON.stringify(adminData));
+    }
+  }, [adminData, isLoadingData]);
+
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setSelectedFile(event.target.files?.[0] || null);
@@ -110,9 +138,9 @@ export default function AdminPage() {
         setAdminData(prevData => {
             const existingKeys = new Set(prevData.map(d => `${d.draw_name}-${d.date}`));
             const toAdd = newDataWithClientIds.filter(nd => !existingKeys.has(`${nd.draw_name}-${nd.date}`));
+            toast({ title: "Importation Réussie", description: result.message || `${toAdd.length} nouveaux résultats importés et ajoutés.` });
             return [...prevData, ...toAdd];
         });
-        toast({ title: "Importation Réussie", description: result.message || `${result.importedCount} résultats importés.` });
       } else {
         toast({ title: "Erreur d'Importation", description: result.error, variant: "destructive" });
       }
@@ -151,36 +179,37 @@ export default function AdminPage() {
         toast({ title: "Erreur", description: "Un résultat pour ce tirage à cette date existe déjà.", variant: "destructive"});
         return;
       }
-      const result = await addLotteryResultAction(data);
-      if (result.success && result.result) {
-        setAdminData(prev => [...prev, { ...result.result!, clientId: result.result!.clientId || Date.now().toString() }]);
-        toast({ title: "Succès", description: result.message });
+      // Simulate server action, then update local state
+      const actionResult = await addLotteryResultAction(data); // This is a simulated action
+      if (actionResult.success && actionResult.result) {
+        setAdminData(prev => [...prev, { ...actionResult.result!, clientId: actionResult.result!.clientId || Date.now().toString() }]);
+        toast({ title: "Succès", description: actionResult.message });
         setIsAddDialogOpen(false);
         reset({ draw_name: drawNames.length > 0 ? drawNames[0] : "", date: format(new Date(), 'yyyy-MM-dd'), gagnants: [], machine: [] });
       } else {
-        toast({ title: "Erreur", description: result.error, variant: "destructive" });
+        toast({ title: "Erreur", description: actionResult.error, variant: "destructive" });
       }
     });
   };
   
   const onEditSubmit: SubmitHandler<LotteryFormValues> = async (data) => {
     if (!editingResult) return;
-     // Check if another result (not the one being edited) has the same draw_name and date
     const conflictingResult = adminData.find(r => r.clientId !== editingResult.clientId && r.draw_name === data.draw_name && r.date === data.date);
     if (conflictingResult) {
         toast({ title: "Erreur de Conflit", description: "Un autre résultat pour ce tirage à cette date existe déjà.", variant: "destructive"});
         return;
     }
     startProcessingTransition(async () => {
-      const result = await updateLotteryResultAction(editingResult.clientId, data);
-      if (result.success && result.result) {
-        setAdminData(prev => prev.map(r => r.clientId === editingResult.clientId ? { ...r, ...result.result!, clientId: editingResult.clientId } : r));
-        toast({ title: "Succès", description: result.message });
+      // Simulate server action, then update local state
+      const actionResult = await updateLotteryResultAction(editingResult.clientId, data); // Simulated
+      if (actionResult.success && actionResult.result) {
+        setAdminData(prev => prev.map(r => r.clientId === editingResult.clientId ? { ...r, ...actionResult.result!, clientId: editingResult.clientId } : r));
+        toast({ title: "Succès", description: actionResult.message });
         setIsEditDialogOpen(false);
         setEditingResult(null);
         reset({ draw_name: drawNames.length > 0 ? drawNames[0] : "", date: format(new Date(), 'yyyy-MM-dd'), gagnants: [], machine: [] });
       } else {
-        toast({ title: "Erreur", description: result.error, variant: "destructive" });
+        toast({ title: "Erreur", description: actionResult.error, variant: "destructive" });
       }
     });
   };
@@ -189,7 +218,7 @@ export default function AdminPage() {
     setEditingResult(resultToEdit);
     reset({ 
       draw_name: resultToEdit.draw_name,
-      date: resultToEdit.date, // Already in YYYY-MM-DD
+      date: resultToEdit.date, 
       gagnants: resultToEdit.gagnants.map(Number),
       machine: resultToEdit.machine.map(Number)
     });
@@ -204,35 +233,38 @@ export default function AdminPage() {
   const confirmDelete = async () => {
     if (!deletingResultClientId) return;
     startProcessingTransition(async () => {
-      const result = await deleteLotteryResultAction(deletingResultClientId);
-      if (result.success) {
+      // Simulate server action, then update local state
+      const actionResult = await deleteLotteryResultAction(deletingResultClientId); // Simulated
+      if (actionResult.success) {
         setAdminData(prev => prev.filter(r => r.clientId !== deletingResultClientId));
-        toast({ title: "Succès", description: result.message });
+        toast({ title: "Succès", description: actionResult.message });
       } else {
-        toast({ title: "Erreur", description: result.error, variant: "destructive" });
+        toast({ title: "Erreur", description: actionResult.error, variant: "destructive" });
       }
       setIsConfirmDeleteDialogOpen(false);
       setDeletingResultClientId(null);
     });
   };
 
-  const handleResetCategoryClick = () => {
-    if (!categoryToReset) {
+  const handleResetCategoryClick = (category: string) => {
+    if (!category) {
         toast({title: "Aucune catégorie", description: "Veuillez sélectionner une catégorie à réinitialiser.", variant: "destructive"});
         return;
     }
+    setCategoryToReset(category);
     setIsResetDialogOpen(true);
   };
 
   const confirmResetCategory = async () => {
     if (!categoryToReset) return;
     startProcessingTransition(async () => {
-      const result = await resetCategoryDataAction(categoryToReset);
-      if (result.success) {
+      // Simulate server action, then update local state
+      const actionResult = await resetCategoryDataAction(categoryToReset); // Simulated
+      if (actionResult.success) {
         setAdminData(prev => prev.filter(r => r.draw_name !== categoryToReset));
-        toast({ title: "Succès", description: result.message });
+        toast({ title: "Succès", description: actionResult.message });
       } else {
-        toast({ title: "Erreur", description: result.error, variant: "destructive" });
+        toast({ title: "Erreur", description: actionResult.error, variant: "destructive" });
       }
       setIsResetDialogOpen(false);
       setCategoryToReset("");
@@ -244,7 +276,7 @@ export default function AdminPage() {
 
   const parseNumbersString = (str: string): number[] => {
     if (!str.trim()) return [];
-    return str.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n >= 1 && n <= 90);
+    return str.split(/[,;\s]+/).map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n >= 1 && n <= 90);
   }
 
   return (
@@ -253,19 +285,25 @@ export default function AdminPage() {
         <CardHeader>
           <CardTitle className="text-3xl font-bold">Interface d'Administration</CardTitle>
           <CardDescription>
-            Gestion des données des tirages Loto Bonheur. Les modifications ici sont simulées et affectent l'état local de cette page.
-            Une base de données persistante (ex: Firebase, IndexedDB) serait nécessaire pour une application réelle.
+            Gestion des données des tirages Loto Bonheur. Les modifications ici affectent les données stockées localement dans votre navigateur.
+            Pour une application de production, une base de données persistante (ex: Firebase) et une authentification robuste sont nécessaires.
           </CardDescription>
         </CardHeader>
+         {initialLoadMessage && (
+            <CardFooter>
+                <p className="text-sm text-muted-foreground">{initialLoadMessage}</p>
+            </CardFooter>
+        )}
       </Card>
 
       <Card>
-        <CardHeader>
-            <CardTitle className="flex items-center"><ShieldAlert className="mr-2 h-5 w-5 text-destructive" /> Authentification</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle className="flex items-center"><ShieldAlert className="mr-2 h-5 w-5 text-destructive" /> Authentification et Base de Données</CardTitle></CardHeader>
         <CardContent>
             <p className="text-muted-foreground">
-                Une authentification sécurisée (par exemple, avec Firebase Auth ou NextAuth.js) est requise pour protéger cette interface en production. Cette fonctionnalité sera implémentée ultérieurement.
+                <strong>Authentification :</strong> Une authentification sécurisée (par exemple, avec Firebase Auth ou NextAuth.js) est requise pour protéger cette interface en production.
+            </p>
+             <p className="text-muted-foreground mt-2">
+                <strong>Persistance des Données :</strong> Actuellement, les données gérées ici sont stockées dans le `localStorage` de votre navigateur. Pour une solution multi-utilisateurs ou plus robuste, une base de données comme Firebase Firestore est recommandée.
             </p>
         </CardContent>
       </Card>
@@ -278,7 +316,7 @@ export default function AdminPage() {
               <Label htmlFor="pdfFile">Fichier PDF</Label>
               <Input id="pdfFile" type="file" accept=".pdf" onChange={handleFileChange} className="mt-1" />
             </div>
-            <Button onClick={handleImportSubmit} disabled={isImporting || !selectedFile}>
+            <Button onClick={handleImportSubmit} disabled={isImporting || !selectedFile} className="w-full">
               {isImporting ? <Loader2 className="animate-spin" /> : <UploadCloud />} Importer
             </Button>
           </CardContent>
@@ -286,7 +324,7 @@ export default function AdminPage() {
         <Card>
           <CardHeader><CardTitle>Exporter les Données (PDF)</CardTitle></CardHeader>
           <CardContent>
-            <Button onClick={handleExportSubmit} disabled={isExporting || adminData.length === 0}>
+            <Button onClick={handleExportSubmit} disabled={isExporting || adminData.length === 0} className="w-full">
               {isExporting ? <Loader2 className="animate-spin" /> : <DownloadCloud />} Exporter
             </Button>
           </CardContent>
@@ -321,7 +359,7 @@ export default function AdminPage() {
                 Aucune donnée à afficher pour {viewCategory === "all" ? "toutes les catégories" : `la catégorie ${viewCategory}`}.
               </div>
             ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto rounded-md border">
                 <Table>
                     <TableHeader>
                     <TableRow>
@@ -329,7 +367,7 @@ export default function AdminPage() {
                         <TableHead>Tirage</TableHead>
                         <TableHead>Gagnants</TableHead>
                         <TableHead>Machine</TableHead>
-                        <TableHead>Actions</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -339,7 +377,7 @@ export default function AdminPage() {
                         <TableCell>{r.draw_name}</TableCell>
                         <TableCell>{r.gagnants.join(', ')}</TableCell>
                         <TableCell>{r.machine.join(', ')}</TableCell>
-                        <TableCell className="space-x-2">
+                        <TableCell className="space-x-1 text-right">
                             <Button variant="outline" size="icon" onClick={() => openEditDialog(r)}><Edit className="h-4 w-4" /></Button>
                             <Button variant="destructive" size="icon" onClick={() => handleDeleteClick(r.clientId!)}><Trash2 className="h-4 w-4" /></Button>
                         </TableCell>
@@ -351,9 +389,9 @@ export default function AdminPage() {
           )}
         </CardContent>
         <CardFooter>
-            <Button onClick={fetchAdminData} variant="outline" disabled={isLoadingData}>
+            <Button onClick={fetchAndInitializeAdminData} variant="outline" disabled={isLoadingData}>
                 <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingData ? 'animate-spin' : ''}`} />
-                Rafraîchir les données (Source simulée)
+                Recharger les Données depuis l'API (Écrase les données locales)
             </Button>
         </CardFooter>
       </Card>
@@ -361,16 +399,36 @@ export default function AdminPage() {
       <Card>
         <CardHeader><CardTitle>Réinitialiser les Données par Catégorie</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          <Label htmlFor="resetCategory">Catégorie à réinitialiser</Label>
-          <Select value={categoryToReset} onValueChange={setCategoryToReset}>
-            <SelectTrigger id="resetCategory"><SelectValue placeholder="Sélectionner une catégorie" /></SelectTrigger>
-            <SelectContent>
-              {drawNames.map(name => <SelectItem key={name} value={name}>{name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Button variant="destructive" disabled={!categoryToReset || isProcessing} onClick={handleResetCategoryClick}>
-            {isProcessing && categoryToReset ? <Loader2 className="animate-spin"/> : <Trash2 />} Réinitialiser la Catégorie
-          </Button>
+            <div className="flex flex-col sm:flex-row gap-4 items-end">
+                <div className="flex-grow">
+                    <Label htmlFor="resetCategory">Catégorie à réinitialiser</Label>
+                    <Select value={categoryToReset} onValueChange={setCategoryToReset}>
+                        <SelectTrigger id="resetCategory"><SelectValue placeholder="Sélectionner une catégorie" /></SelectTrigger>
+                        <SelectContent>
+                        {drawNames.map(name => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                </div>
+                <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                        <Button variant="destructive" disabled={!categoryToReset || isProcessing} className="w-full sm:w-auto">
+                            <Trash2 className="mr-2 h-4 w-4" /> Réinitialiser la Catégorie
+                        </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                        <AlertDialogHeader><AlertDialogTitle>Confirmer la Réinitialisation</AlertDialogTitle></AlertDialogHeader>
+                        <AlertDialogDescription>
+                        Êtes-vous sûr de vouloir supprimer TOUS les résultats pour la catégorie "{categoryToReset}" ? Cette action est irréversible.
+                        </AlertDialogDescription>
+                        <AlertDialogFooter>
+                        <AlertDialogCancel onClick={() => { setIsResetDialogOpen(false); } }>Annuler</AlertDialogCancel>
+                        <AlertDialogAction onClick={confirmResetCategory} disabled={isProcessing} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
+                            {isProcessing ? <Loader2 className="animate-spin"/> : "Réinitialiser"}
+                        </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+            </div>
         </CardContent>
       </Card>
 
@@ -399,22 +457,22 @@ export default function AdminPage() {
               {errors.date && <p className="text-destructive text-sm">{errors.date.message}</p>}
             </div>
             <div>
-              <Label htmlFor="add_gagnants">Numéros Gagnants (séparés par virgule)</Label>
+              <Label htmlFor="add_gagnants">Numéros Gagnants (séparés par virgule/espace)</Label>
               <Controller
                 name="gagnants"
                 control={control}
                 render={({ field }) => <Input id="add_gagnants" placeholder="1,2,3,4,5" onChange={e => field.onChange(parseNumbersString(e.target.value))} value={Array.isArray(field.value) ? field.value.join(',') : ''} />}
               />
-              {errors.gagnants && <p className="text-destructive text-sm">{typeof errors.gagnants.message === 'string' ? errors.gagnants.message : errors.gagnants.root?.message || (errors.gagnants as any)[0]?.message}</p>}
+              {errors.gagnants && <p className="text-destructive text-sm">{errors.gagnants.root?.message || (errors.gagnants as any).message || (errors.gagnants as any)[0]?.message}</p>}
             </div>
              <div>
-              <Label htmlFor="add_machine">Numéros Machine (séparés par virgule)</Label>
+              <Label htmlFor="add_machine">Numéros Machine (séparés par virgule/espace)</Label>
                <Controller
                 name="machine"
                 control={control}
                 render={({ field }) => <Input id="add_machine" placeholder="6,7,8,9,10" onChange={e => field.onChange(parseNumbersString(e.target.value))} value={Array.isArray(field.value) ? field.value.join(',') : ''} />}
               />
-              {errors.machine && <p className="text-destructive text-sm">{typeof errors.machine.message === 'string' ? errors.machine.message : errors.machine.root?.message || (errors.machine as any)[0]?.message}</p>}
+              {errors.machine && <p className="text-destructive text-sm">{errors.machine.root?.message || (errors.machine as any).message || (errors.machine as any)[0]?.message}</p>}
             </div>
             <DialogFooter>
                 <DialogClose asChild><Button type="button" variant="outline">Annuler</Button></DialogClose>
@@ -450,22 +508,22 @@ export default function AdminPage() {
                 {errors.date && <p className="text-destructive text-sm">{errors.date.message}</p>}
               </div>
               <div>
-                <Label htmlFor="edit_gagnants">Numéros Gagnants (séparés par virgule)</Label>
+                <Label htmlFor="edit_gagnants">Numéros Gagnants (séparés par virgule/espace)</Label>
                  <Controller
                     name="gagnants"
                     control={control}
                     render={({ field }) => <Input id="edit_gagnants" placeholder="1,2,3,4,5" onChange={e => field.onChange(parseNumbersString(e.target.value))} value={Array.isArray(field.value) ? field.value.join(',') : ''} />}
                 />
-                {errors.gagnants && <p className="text-destructive text-sm">{typeof errors.gagnants.message === 'string' ? errors.gagnants.message : errors.gagnants.root?.message || (errors.gagnants as any)[0]?.message}</p>}
+                {errors.gagnants && <p className="text-destructive text-sm">{errors.gagnants.root?.message || (errors.gagnants as any).message || (errors.gagnants as any)[0]?.message}</p>}
               </div>
               <div>
-                <Label htmlFor="edit_machine">Numéros Machine (séparés par virgule)</Label>
+                <Label htmlFor="edit_machine">Numéros Machine (séparés par virgule/espace)</Label>
                 <Controller
                     name="machine"
                     control={control}
                     render={({ field }) => <Input id="edit_machine" placeholder="6,7,8,9,10" onChange={e => field.onChange(parseNumbersString(e.target.value))} value={Array.isArray(field.value) ? field.value.join(',') : ''} />}
                 />
-                {errors.machine && <p className="text-destructive text-sm">{typeof errors.machine.message === 'string' ? errors.machine.message : errors.machine.root?.message || (errors.machine as any)[0]?.message}</p>}
+                {errors.machine && <p className="text-destructive text-sm">{errors.machine.root?.message || (errors.machine as any).message || (errors.machine as any)[0]?.message}</p>}
               </div>
               <DialogFooter>
                 <DialogClose asChild><Button type="button" variant="outline" onClick={() => {setIsEditDialogOpen(false); setEditingResult(null);}}>Annuler</Button></DialogClose>
@@ -490,21 +548,7 @@ export default function AdminPage() {
         </AlertDialogContent>
       </AlertDialog>
       
-      {/* Reset Category Confirmation Dialog */}
-      <AlertDialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
-            <AlertDialogContent>
-              <AlertDialogHeader><AlertDialogTitle>Confirmer la Réinitialisation</AlertDialogTitle></AlertDialogHeader>
-              <AlertDialogDescription>
-                Êtes-vous sûr de vouloir supprimer TOUS les résultats pour la catégorie "{categoryToReset}" ? Cette action est irréversible.
-              </AlertDialogDescription>
-              <AlertDialogFooter>
-                <AlertDialogCancel onClick={() => { setCategoryToReset(""); setIsResetDialogOpen(false); } }>Annuler</AlertDialogCancel>
-                <AlertDialogAction onClick={confirmResetCategory} disabled={isProcessing || !categoryToReset} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
-                    {isProcessing ? <Loader2 className="animate-spin"/> : "Réinitialiser"}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+      {/* Reset Category Confirmation Dialog: This is now integrated into the Card above using AlertDialogTrigger directly */}
     </div>
   );
 }

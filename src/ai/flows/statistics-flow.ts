@@ -6,12 +6,13 @@
  */
 
 import { ai } from '@/ai/genkit';
+import { z } from 'zod'; // Ensured zod is imported directly
 import type { LotteryResult } from '@/types/lottery';
 import {
-  type LotteryStatisticsInput,
-  type LotteryStatisticsOutput,
-  LotteryStatisticsInputSchema,
-  LotteryStatisticsOutputSchema
+  LotteryStatisticsInputSchema as InputSchema,
+  LotteryStatisticsOutputSchema as OutputSchema,
+  type LotteryStatisticsInput as InputType,
+  type LotteryStatisticsOutput as OutputType
 } from './statistics-types';
 
 function getTopN(frequencies: Record<string, number>, n: number, ascending: boolean): number[] {
@@ -22,7 +23,7 @@ function getTopN(frequencies: Record<string, number>, n: number, ascending: bool
   if (sorted.length === 0) return [];
 
   const limit = Math.min(n, sorted.length);
-  if (limit === 0) return []; // handle empty sorted array or n=0
+  if (limit === 0) return [];
   
   const thresholdFreq = sorted[limit-1].freq;
   
@@ -39,13 +40,13 @@ function getTopNPairs(frequencies: Record<string, number>, n: number): string[] 
       .map(([pair]) => pair);
 }
 
-const calculateLotteryStatisticsFlow = ai.defineFlow(
+const internalCalculateLotteryStatisticsFlow = ai.defineFlow(
   {
     name: 'calculateLotteryStatisticsFlow',
-    inputSchema: LotteryStatisticsInputSchema,
-    outputSchema: LotteryStatisticsOutputSchema,
+    inputSchema: InputSchema,
+    outputSchema: OutputSchema,
   },
-  async (input: LotteryStatisticsInput): Promise<LotteryStatisticsOutput> => {
+  async (input: InputType): Promise<OutputType> => {
     const winningFrequencies: Record<string, number> = {};
     const machineFrequencies: Record<string, number> = {};
     const winningPairFrequencies: Record<string, number> = {};
@@ -134,6 +135,6 @@ const calculateLotteryStatisticsFlow = ai.defineFlow(
   }
 );
 
-export async function calculateLotteryStatistics(input: LotteryStatisticsInput): Promise<LotteryStatisticsOutput> {
-  return calculateLotteryStatisticsFlow(input);
+export async function calculateLotteryStatistics(input: InputType): Promise<OutputType> {
+  return internalCalculateLotteryStatisticsFlow(input);
 }

@@ -1,3 +1,4 @@
+// src/app/draw/[drawSlug]/statistiques/page.tsx
 'use client';
 
 import type { LotteryResult } from '@/types/lottery';
@@ -5,7 +6,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { calculateLotteryStatistics, type LotteryStatisticsOutput } from '@/ai/flows/statistics-flow';
+import { calculateLotteryStatistics } from '@/ai/flows/statistics-flow';
+import type { LotteryStatisticsOutput } from '@/ai/flows/statistics-types'; // Correct type import
 import { getDrawNameBySlug } from '@/config/draw-schedule';
 import LoadingSpinner from '@/components/loading-spinner';
 import ErrorMessage from '@/components/error-message';
@@ -75,9 +77,8 @@ export default function StatisticsPage() {
           .finally(() => setIsLoadingStats(false));
       } else {
         setStats(null); 
-        // setError(`Aucune donnée de résultat trouvée pour "${drawName}" pour calculer les statistiques.`);
       }
-    } else if (!isLoadingData && drawName) { // Handle case where allResults is empty but drawName is set
+    } else if (!isLoadingData && drawName) { 
         setStats(null);
     }
   }, [allResults, drawName, isLoadingData]);
@@ -127,7 +128,7 @@ export default function StatisticsPage() {
   );
   
   if (isLoadingData || isLoadingStats) return <LoadingSpinner />;
-  if (error && !stats) return <ErrorMessage message={error} />; // Show error only if stats also failed or no data
+  if (error && !stats) return <ErrorMessage message={error} />; 
   
   if (!stats && !isLoadingData && !isLoadingStats && drawName) {
      return (
@@ -148,7 +149,7 @@ export default function StatisticsPage() {
     );
   }
   
-  if (!stats) return <LoadingSpinner />; // Should be caught by above, but as a fallback
+  if (!stats) return <LoadingSpinner />;
 
   return (
     <div className="space-y-8">
@@ -165,7 +166,7 @@ export default function StatisticsPage() {
             </Link>
         </Button>
       </header>
-      {error && <ErrorMessage message={error} />} {/* Display non-fatal errors if stats were partially computed or from previous attempts */}
+      {error && <ErrorMessage message={error} />}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
