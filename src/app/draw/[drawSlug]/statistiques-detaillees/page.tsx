@@ -1,3 +1,4 @@
+// src/app/draw/[drawSlug]/statistiques-detaillees/page.tsx
 'use client';
 
 import type { LotteryResult } from '@/types/lottery';
@@ -11,7 +12,7 @@ import ErrorMessage from '@/components/error-message';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Info, ListOrdered, Sigma, Percent } from "lucide-react";
+import { Info, ListOrdered, Sigma, Percentile as PercentIcon, TrendingUp } from "lucide-react"; // Using Percentile as Percent
 
 interface ChartData {
   name: string;
@@ -63,18 +64,23 @@ export default function DetailedStatisticsPage() {
       const filteredResults = allResults.filter(result => result.draw_name === drawName);
       if (filteredResults.length > 0) {
         setIsLoadingStats(true);
+        setStats(null); // Reset previous stats
         calculateLotteryStatistics({ results: filteredResults, drawName })
           .then(setStats)
           .catch(err => {
             setError(`Erreur lors du calcul des statistiques détaillées: ${err.message}`);
             console.error(err);
+            setStats(null); // Ensure stats is null on error
           })
           .finally(() => setIsLoadingStats(false));
       } else {
-        setStats(null);
+        // No results for this specific drawName, so no stats to calculate
+        setStats(null); 
+        setIsLoadingStats(false);
       }
-    } else if (!isLoadingData && drawName) {
+    } else if (!isLoadingData && drawName) { // Handle case where allResults might be empty from API
         setStats(null);
+        setIsLoadingStats(false);
     }
   }, [allResults, drawName, isLoadingData]);
 
@@ -82,32 +88,33 @@ export default function DetailedStatisticsPage() {
     const chartData: ChartData[] = Object.entries(data)
       .map(([name, frequency]) => ({ name, frequency }))
       .sort((a, b) => {
-        // Sort by name if it's numeric (like sums or odd counts), otherwise by frequency for pairs
         const aNameNum = parseInt(a.name);
         const bNameNum = parseInt(b.name);
         if (!isNaN(aNameNum) && !isNaN(bNameNum)) {
           return aNameNum - bNameNum;
         }
-        return b.frequency - a.frequency;
+        return b.frequency - a.frequency; // Fallback for non-numeric names, though not expected for these charts
       });
       
-    if (chartData.length === 0) return <p className="text-muted-foreground mt-2">Aucune donnée disponible pour ce graphique.</p>;
+    if (chartData.length === 0) return <p className="text-sm text-muted-foreground mt-2 p-4 text-center">Aucune donnée disponible pour ce graphique.</p>;
 
     return (
       <ResponsiveContainer width="100%" height={350}>
         <RechartsBarChart data={chartData} margin={{ top: 5, right: 20, left: -20, bottom: 50 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))"/>
-          <XAxis dataKey="name" angle={-40} textAnchor="end" height={60} stroke="hsl(var(--muted-foreground))" interval={0} />
-          <YAxis stroke="hsl(var(--muted-foreground))"/>
+          <XAxis dataKey="name" angle={-40} textAnchor="end" height={60} stroke="hsl(var(--muted-foreground))" interval={0} fontSize={12} />
+          <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12}/>
           <Tooltip
+            cursor={{ fill: 'hsla(var(--muted), 0.5)' }}
             contentStyle={{
               backgroundColor: 'hsl(var(--popover))',
               borderColor: 'hsl(var(--border))',
-              color: 'hsl(var(--popover-foreground))'
+              color: 'hsl(var(--popover-foreground))',
+              borderRadius: 'var(--radius)',
             }}
           />
-          <Legend wrapperStyle={{ color: 'hsl(var(--foreground))' }}/>
-          <Bar dataKey="frequency" fill="hsl(var(--chart-2))" name={dataKeyName} />
+          <Legend wrapperStyle={{ color: 'hsl(var(--foreground))', paddingTop: '10px' }} />
+          <Bar dataKey="frequency" fill="hsl(var(--chart-2))" name={dataKeyName} radius={[4, 4, 0, 0]} />
         </RechartsBarChart>
       </ResponsiveContainer>
     );
@@ -118,77 +125,84 @@ export default function DetailedStatisticsPage() {
   }
 
   if (isLoadingData || isLoadingStats) return <LoadingSpinner />;
-  if (error && !stats) return <ErrorMessage message={error} />;
-
+  
+  // Error from fetching all results or calculating stats
+  if (error && !stats) return <ErrorMessage title="Erreur de Données" message={error} />; 
+  
+  // No specific data for this drawName to calculate stats, or allResults empty
   if (!stats && !isLoadingData && !isLoadingStats && drawName) {
      return (
-        <div className="space-y-6">
+        <div className="space-y-6 p-4">
             <header>
                 <h1 className="text-3xl font-bold text-primary mb-1">Statistiques Détaillées: {drawName}</h1>
             </header>
-            <Alert>
-                <Info className="h-4 w-4" />
-                <AlertTitle>Données Insuffisantes</AlertTitle>
+            <Alert variant="default" className="border-primary/30">
+                <Info className="h-4 w-4 text-primary" />
+                <AlertTitle className="text-primary">Données Insuffisantes</AlertTitle>
                 <AlertDescription>
-                Aucune donnée de résultat n'a été trouvée pour "{drawName}" pour générer des statistiques détaillées.
-                Veuillez vérifier la section 'Données' ou rafraîchir les résultats.
+                Aucune donnée de résultat n'a été trouvée pour "{drawName}" dans la période analysée pour générer des statistiques détaillées.
+                Veuillez vérifier la section 'Données' ou rafraîchir les résultats si vous pensez que cela est une erreur.
                 </AlertDescription>
             </Alert>
         </div>
     );
   }
   
-  if (!stats) return <LoadingSpinner />;
+  if (!stats) return <ErrorMessage title="Statistiques Non Disponibles" message={`Les statistiques détaillées pour ${drawName} n'ont pas pu être chargées.`} />; // Fallback if stats is null after loading
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 p-4 md:p-6 lg:p-8">
       <header>
         <h1 className="text-3xl font-bold text-primary mb-1">Statistiques Détaillées: {stats.drawName}</h1>
         <p className="text-lg text-muted-foreground">
-          Analyse approfondie basée sur {stats.totalDrawsAnalyzed} tirage(s).
+          Analyse approfondie basée sur {stats.totalDrawsAnalyzed} tirage(s) pour la catégorie "{stats.drawName}".
         </p>
       </header>
-      {error && <ErrorMessage message={error} />}
+      {error && <Alert variant="destructive"><Info className="h-4 w-4" /><AlertTitle>Erreur partielle</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center"><ListOrdered className="mr-2 h-5 w-5 text-accent" />Fréquence des Paires (Numéros Gagnants)</CardTitle>
-          <CardDescription>Les 10 paires de numéros gagnants les plus fréquentes.</CardDescription>
+          <CardDescription>Les {stats.mostFrequentWinningPairs.length} paires de numéros gagnants les plus fréquentes.</CardDescription>
         </CardHeader>
         <CardContent>
           {stats.mostFrequentWinningPairs.length > 0 ? (
-            <ul className="space-y-1 list-disc pl-5 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
               {stats.mostFrequentWinningPairs.map(pair => (
-                <li key={pair}>
-                  Paire <Badge variant="outline">{pair}</Badge>: {stats.winningPairFrequencies[pair] || 0} fois
-                </li>
+                <div key={pair} className="p-3 bg-muted/50 rounded-md flex justify-between items-center">
+                  <Badge variant="outline" className="text-sm">{pair}</Badge>
+                  <span className="text-sm font-medium">{stats.winningPairFrequencies[pair] || 0} fois</span>
+                </div>
               ))}
-            </ul>
+            </div>
           ) : (
-            <p className="text-muted-foreground">Aucune donnée de fréquence de paires disponible.</p>
+            <p className="text-sm text-muted-foreground">Aucune donnée de fréquence de paires n'est disponible pour le moment.</p>
           )}
         </CardContent>
+         <CardFooter>
+            <p className="text-xs text-muted-foreground">Note: Affiche les paires de numéros les plus communes apparues ensemble dans les résultats gagnants.</p>
+        </CardFooter>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center"><Percent className="mr-2 h-5 w-5 text-accent" />Distribution Pairs/Impairs (Numéros Gagnants)</CardTitle>
+          <CardTitle className="flex items-center"><PercentIcon className="mr-2 h-5 w-5 text-accent" />Distribution Pairs/Impairs (Numéros Gagnants)</CardTitle>
           <CardDescription>Analyse de la répartition des numéros pairs et impairs dans les tirages gagnants.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4 text-center">
-            <div>
-                <p className="text-sm text-muted-foreground">Moy. Impairs / Tirage</p>
-                <p className="text-2xl font-bold">{stats.oddEvenWinningStats.averageOdds.toFixed(2)}</p>
-            </div>
-            <div>
-                <p className="text-sm text-muted-foreground">Moy. Pairs / Tirage</p>
-                <p className="text-2xl font-bold">{stats.oddEvenWinningStats.averageEvens.toFixed(2)}</p>
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-center">
+            <Card className="p-4">
+                <CardDescription>Moy. Impairs / Tirage</CardDescription>
+                <CardTitle className="text-2xl">{stats.oddEvenWinningStats.averageOdds.toFixed(2)}</CardTitle>
+            </Card>
+            <Card className="p-4">
+                <CardDescription>Moy. Pairs / Tirage</CardDescription>
+                <CardTitle className="text-2xl">{stats.oddEvenWinningStats.averageEvens.toFixed(2)}</CardTitle>
+            </Card>
           </div>
           <div>
-            <h4 className="text-md font-semibold mb-2 mt-4">Nombre de tirages par quantité de numéros impairs (0 à 5):</h4>
-            {renderBarChart(stats.oddEvenWinningStats.drawsWithXOdds, "Nombre de Numéros Impairs", "Nb. Tirages")}
+            <h4 className="text-md font-semibold mb-2 mt-4 text-center">Nombre de tirages par quantité de numéros impairs (0 à 5)</h4>
+            {renderBarChart(stats.oddEvenWinningStats.drawsWithXOdds, "Nb. Numéros Impairs", "Nb. Tirages")}
           </div>
         </CardContent>
       </Card>
@@ -200,28 +214,38 @@ export default function DetailedStatisticsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
-            <div>
-                <p className="text-sm text-muted-foreground">Somme Moyenne</p>
-                <p className="text-2xl font-bold">{stats.winningSumStats.averageSum.toFixed(2)}</p>
-            </div>
-            <div>
-                <p className="text-sm text-muted-foreground">Somme Minimale</p>
-                <p className="text-2xl font-bold">{stats.winningSumStats.minSum ?? 'N/A'}</p>
-            </div>
-            <div>
-                <p className="text-sm text-muted-foreground">Somme Maximale</p>
-                <p className="text-2xl font-bold">{stats.winningSumStats.maxSum ?? 'N/A'}</p>
-            </div>
+            <Card className="p-4">
+                <CardDescription>Somme Moyenne</CardDescription>
+                <CardTitle className="text-2xl">{stats.winningSumStats.averageSum.toFixed(2)}</CardTitle>
+            </Card>
+            <Card className="p-4">
+                <CardDescription>Somme Minimale Observée</CardDescription>
+                <CardTitle className="text-2xl">{stats.winningSumStats.minSum ?? 'N/A'}</CardTitle>
+            </Card>
+            <Card className="p-4">
+                <CardDescription>Somme Maximale Observée</CardDescription>
+                <CardTitle className="text-2xl">{stats.winningSumStats.maxSum ?? 'N/A'}</CardTitle>
+            </Card>
           </div>
            <div>
-            <h4 className="text-md font-semibold mb-2 mt-4">Fréquence des sommes des numéros gagnants:</h4>
-            {renderBarChart(stats.winningSumStats.sumFrequencies, "Fréquence des Sommes", "Nb. Tirages")}
+            <h4 className="text-md font-semibold mb-2 mt-4 text-center">Fréquence des sommes des numéros gagnants</h4>
+            {renderBarChart(stats.winningSumStats.sumFrequencies, "Somme des Numéros", "Nb. Tirages")}
           </div>
         </CardContent>
          <CardFooter>
-            <p className="text-xs text-muted-foreground">Note: La plage typique pour la somme de 5 numéros uniques entre 1 et 90 est de 15 (1+2+3+4+5) à 440 (86+87+88+89+90).</p>
+            <p className="text-xs text-muted-foreground">Note: La plage théorique pour la somme de 5 numéros uniques entre 1 et 90 est de 15 (1+2+3+4+5) à 440 (86+87+88+89+90).</p>
         </CardFooter>
       </Card>
+       { stats.totalDrawsAnalyzed === 0 && (
+         <Alert variant="default" className="border-primary/30">
+            <Info className="h-4 w-4 text-primary" />
+            <AlertTitle className="text-primary">Statistiques Basées sur Aucun Tirage</AlertTitle>
+            <AlertDescription>
+                Les statistiques affichées sont basées sur 0 tirage analysé pour la catégorie "{stats.drawName}".
+                Ceci peut arriver si aucune donnée n'est disponible pour cette catégorie.
+            </AlertDescription>
+        </Alert>
+       )}
     </div>
   );
 }
