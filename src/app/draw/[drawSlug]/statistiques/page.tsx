@@ -2,16 +2,18 @@
 
 import type { LotteryResult } from '@/types/lottery';
 import { useEffect, useState, useCallback } from 'react';
-import { useParams } from 'next/navigation';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { calculateLotteryStatistics, type LotteryStatisticsOutput } from '@/ai/flows/statistics-flow';
 import { getDrawNameBySlug } from '@/config/draw-schedule';
 import LoadingSpinner from '@/components/loading-spinner';
 import ErrorMessage from '@/components/error-message';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Info } from "lucide-react";
+import { Info, ArrowRightCircle } from "lucide-react";
 
 interface ChartData {
   name: string;
@@ -20,6 +22,7 @@ interface ChartData {
 
 export default function StatisticsPage() {
   const params = useParams();
+  const router = useRouter();
   const drawSlug = params.drawSlug as string;
 
   const [allResults, setAllResults] = useState<LotteryResult[]>([]);
@@ -71,12 +74,15 @@ export default function StatisticsPage() {
           })
           .finally(() => setIsLoadingStats(false));
       } else {
-        setStats(null); // No data for this draw name
+        setStats(null); 
+        // setError(`Aucune donnée de résultat trouvée pour "${drawName}" pour calculer les statistiques.`);
       }
+    } else if (!isLoadingData && drawName) { // Handle case where allResults is empty but drawName is set
+        setStats(null);
     }
-  }, [allResults, drawName]);
+  }, [allResults, drawName, isLoadingData]);
 
-  if (!drawName && !isLoadingData) {
+  if (!drawName && !isLoadingData && !isLoadingStats) {
     return <ErrorMessage title="Catégorie Invalide" message={`La catégorie de tirage "${drawSlug}" n'a pas été trouvée.`} />;
   }
   
@@ -85,13 +91,13 @@ export default function StatisticsPage() {
       .map(([name, frequency]) => ({ name, frequency }))
       .sort((a, b) => b.frequency - a.frequency);
 
-    if (chartData.length === 0) return <p className="text-muted-foreground">Aucune donnée de fréquence disponible.</p>;
+    if (chartData.length === 0) return <p className="text-muted-foreground mt-2">Aucune donnée de fréquence disponible pour ce graphique.</p>;
 
     return (
       <ResponsiveContainer width="100%" height={400}>
-        <BarChart data={chartData} margin={{ top: 5, right: 20, left: -20, bottom: 60 }}>
+        <RechartsBarChart data={chartData} margin={{ top: 5, right: 20, left: -20, bottom: 60 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))"/>
-          <XAxis dataKey="name" angle={-45} textAnchor="end" height={50} stroke="hsl(var(--muted-foreground))" />
+          <XAxis dataKey="name" angle={-45} textAnchor="end" height={50} stroke="hsl(var(--muted-foreground))" interval={0}/>
           <YAxis stroke="hsl(var(--muted-foreground))"/>
           <Tooltip
             contentStyle={{
@@ -102,7 +108,7 @@ export default function StatisticsPage() {
           />
           <Legend wrapperStyle={{ color: 'hsl(var(--foreground))' }}/>
           <Bar dataKey="frequency" fill="hsl(var(--primary))" name={title} />
-        </BarChart>
+        </RechartsBarChart>
       </ResponsiveContainer>
     );
   };
@@ -119,9 +125,9 @@ export default function StatisticsPage() {
       )}
     </div>
   );
-
+  
   if (isLoadingData || isLoadingStats) return <LoadingSpinner />;
-  if (error) return <ErrorMessage message={error} />;
+  if (error && !stats) return <ErrorMessage message={error} />; // Show error only if stats also failed or no data
   
   if (!stats && !isLoadingData && !isLoadingStats && drawName) {
      return (
@@ -134,25 +140,32 @@ export default function StatisticsPage() {
                 <Info className="h-4 w-4" />
                 <AlertTitle>Données Insuffisantes</AlertTitle>
                 <AlertDescription>
-                Aucune donnée de résultat trouvée pour "{drawName}" pour générer des statistiques.
-                Veuillez vérifier la section 'Données' ou rafraîchir.
+                Aucune donnée de résultat n'a été trouvée pour "{drawName}" pour générer des statistiques.
+                Veuillez vérifier la section 'Données' ou rafraîchir les résultats.
                 </AlertDescription>
             </Alert>
         </div>
     );
   }
   
-  if (!stats) return null;
-
+  if (!stats) return <LoadingSpinner />; // Should be caught by above, but as a fallback
 
   return (
     <div className="space-y-8">
-      <header>
-        <h1 className="text-3xl font-bold text-primary mb-1">Statistiques: {stats.drawName}</h1>
-        <p className="text-lg text-muted-foreground">
-          Basé sur {stats.totalDrawsAnalyzed} tirage(s) analysé(s).
-        </p>
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
+        <div>
+            <h1 className="text-3xl font-bold text-primary mb-1">Statistiques: {stats.drawName}</h1>
+            <p className="text-lg text-muted-foreground">
+            Basé sur {stats.totalDrawsAnalyzed} tirage(s) analysé(s).
+            </p>
+        </div>
+        <Button asChild variant="outline" className="mt-4 sm:mt-0">
+            <Link href={`/draw/${drawSlug}/statistiques-detaillees`}>
+                Statistiques Détaillées <ArrowRightCircle className="ml-2 h-4 w-4" />
+            </Link>
+        </Button>
       </header>
+      {error && <ErrorMessage message={error} />} {/* Display non-fatal errors if stats were partially computed or from previous attempts */}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>

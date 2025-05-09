@@ -3,10 +3,10 @@
 import type { LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react'; // Added useEffect, useState
-import { BarChart3, Home, Layers, Lightbulb, ShieldCheck, Settings, CalendarDays } from 'lucide-react';
+import { useEffect, useState } from 'react'; 
+import { BarChart3, Home, Layers, Lightbulb, ShieldCheck, Settings, CalendarDays, FileText } from 'lucide-react';
 
-import { DRAW_SCHEDULE, slugifyDrawName, getUniqueDrawNames } from '@/config/draw-schedule'; // Added getUniqueDrawNames
+import { DRAW_SCHEDULE, slugifyDrawName } from '@/config/draw-schedule'; 
 import { cn } from '@/lib/utils';
 import {
   Accordion,
@@ -39,6 +39,7 @@ const drawSubNavItems: SubNavItem[] = [
   { label: 'Données', hrefPart: 'donnees', icon: Layers },
   { label: 'Consulter', hrefPart: 'consulter', icon: Lightbulb },
   { label: 'Statistiques', hrefPart: 'statistiques', icon: BarChart3 },
+  { label: 'Stats Détaillées', hrefPart: 'statistiques-detaillees', icon: FileText },
   { label: 'Prédiction', hrefPart: 'prediction', icon: ShieldCheck },
 ];
 
@@ -90,10 +91,14 @@ export default function SidebarContentInternal() {
     if (matchExact) {
       return pathname === href;
     }
-    const isSubItemPath = drawSubNavItems.some(subItem => href.endsWith(`/${subItem.hrefPart}`));
-    if (isSubItemPath) {
-        return pathname === href; 
+    // Check if it's a base path for a draw category (e.g. /draw/etoile)
+    // This ensures the parent accordion item for "Etoile" highlights if any sub-item is active
+    const pathSegments = pathname.split('/');
+    const hrefSegments = href.split('/');
+    if (hrefSegments.length === 3 && hrefSegments[1] === 'draw' && pathSegments.length > 3 && pathSegments[1] === 'draw' && pathSegments[2] === hrefSegments[2]) {
+      return true; 
     }
+
     return pathname.startsWith(href); 
   };
 
@@ -119,12 +124,12 @@ export default function SidebarContentInternal() {
           <Accordion 
             type="multiple" 
             className="w-full"
-            defaultValue={defaultOpenDays}
-            key={`days-accordion-${defaultOpenDays.join('-')}`} // Key to re-render with new defaults
+            value={defaultOpenDays} // Controlled component
+            onValueChange={setDefaultOpenDays} // Allow user to change open state
           >
             {orderedDays.map((day) => {
               const daySchedule = DRAW_SCHEDULE[day];
-              if (!daySchedule) return null;
+              if (!daySchedule || Object.keys(daySchedule).length === 0) return null;
 
               const daySlug = slugifyDrawName(day);
               
@@ -151,10 +156,10 @@ export default function SidebarContentInternal() {
                     <Accordion 
                         type="multiple" 
                         className="w-full"
-                        defaultValue={defaultOpenDraws}
-                        key={`draws-accordion-${daySlug}-${defaultOpenDraws.join('-')}`} // Key to re-render
+                        value={defaultOpenDraws} // Controlled component
+                        onValueChange={setDefaultOpenDraws} // Allow user to change open state
                     >
-                      {Object.entries(daySchedule).map(([time, drawName]) => {
+                      {Object.entries(daySchedule).sort(([timeA], [timeB]) => timeA.localeCompare(timeB)).map(([time, drawName]) => {
                         const drawSlug = slugifyDrawName(drawName);
                         const baseDrawPath = `/draw/${drawSlug}`;
                         const isDrawNameEffectivelyActive = drawSubNavItems.some(subItem => pathname === `${baseDrawPath}/${subItem.hrefPart}`);
@@ -178,7 +183,7 @@ export default function SidebarContentInternal() {
                                   return (
                                     <Button
                                       key={subItem.label}
-                                      variant={isLinkActive(subHref, true) ? 'secondary' : 'ghost'}
+                                      variant={pathname === subHref ? 'secondary' : 'ghost'} // Exact match for sub-items
                                       size="sm"
                                       className="justify-start"
                                       asChild
