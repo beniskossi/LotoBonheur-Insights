@@ -9,7 +9,7 @@
  */
 
 import { ai } from '@/ai/genkit';
-import { z } from 'genkit/zod';
+import { z } from 'genkit';
 import type { LotteryResult } from '@/types/lottery';
 
 export const LotteryPredictionInputSchema = z.object({
@@ -40,7 +40,7 @@ export type LotteryPredictionOutput = z.infer<typeof LotteryPredictionOutputSche
 // - Calculate frequency of all numbers.
 // - Pick top N most frequent numbers.
 // - Randomly select from these or use a mix of frequent and less frequent.
-// This is a placeholder for a more complex ML model.
+// This is a placeholder for a more complex ML model (Neural Network).
 function simplePredictionStrategy(historicalResults: LotteryResult[], count: number): number[] {
   if (historicalResults.length === 0) {
     // Fallback: generate random unique numbers if no history
@@ -58,7 +58,7 @@ function simplePredictionStrategy(historicalResults: LotteryResult[], count: num
     });
      // Optionally include machine numbers in frequency for prediction
     result.machine.forEach(num => {
-        frequencies[num.toString()] = (frequencies[num.toString()] || 0) + 0.5; // Weight machine numbers less?
+        frequencies[num.toString()] = (frequencies[num.toString()] || 0) + 0.5; // Weight machine numbers less
     });
   });
 
@@ -91,34 +91,26 @@ export const generateLotteryPredictionFlow = ai.defineFlow(
     name: 'generateLotteryPredictionFlow',
     inputSchema: LotteryPredictionInputSchema,
     outputSchema: LotteryPredictionOutputSchema,
-    // IMPORTANT: Add `config: { model: 'googleai/gemini-1.5-flash-latest' }` or similar to enable a reasoning model if the prompt needs it
-    // However, for this primarily logic-based flow, a reasoning model isn't strictly necessary unless we add a text generation part.
   },
   async (input) => {
     const { results, drawName } = input;
 
-    // For this placeholder, we'll use a very simple strategy.
-    // A real ML model would be trained and invoked here.
+    // Placeholder: Uses simple strategy. A Neural Network model would be trained and invoked here.
     const predictedGagnants = simplePredictionStrategy(results, 5);
-    const predictedMachine = simplePredictionStrategy(results, 5); // Can use different strategy for machine if needed
-
-    // Make sure winning and machine numbers are distinct if that's a rule,
-    // or re-predict machine numbers if overlap. For simplicity, not handled here.
+    const predictedMachine = simplePredictionStrategy(results, 5); 
 
     return {
       drawName,
       predictedWinningNumbers: predictedGagnants,
       predictedMachineNumbers: predictedMachine,
       confidence: "Faible (Basé sur une stratégie simplifiée de fréquence et de sélection aléatoire)",
-      explanation: "Cette prédiction est générée à partir des numéros historiquement fréquents et d'une part d'aléa. Elle ne constitue pas une garantie de gain et est fournie à titre indicatif. Un modèle d'apprentissage automatique plus avancé est prévu.",
+      explanation: "Cette prédiction est générée à partir des numéros historiquement fréquents et d'une part d'aléa. Elle ne constitue pas une garantie de gain et est fournie à titre indicatif. Un modèle d'apprentissage automatique de type réseau neuronal plus avancé est en cours de développement pour améliorer la précision.",
     };
   }
 );
 
 export async function generateLotteryPrediction(input: LotteryPredictionInput): Promise<LotteryPredictionOutput> {
   if (input.results.length === 0) {
-    // Handle case with no historical data gracefully for prediction.
-    // The simplePredictionStrategy has a fallback, but we can be more explicit.
     const randomWinning = simplePredictionStrategy([], 5);
     const randomMachine = simplePredictionStrategy([], 5);
     return {
@@ -126,7 +118,7 @@ export async function generateLotteryPrediction(input: LotteryPredictionInput): 
       predictedWinningNumbers: randomWinning,
       predictedMachineNumbers: randomMachine,
       confidence: "Très faible (Généré aléatoirement faute de données historiques)",
-      explanation: "Aucune donnée historique n'est disponible pour ce tirage. Les numéros ont été générés de manière aléatoire.",
+      explanation: "Aucune donnée historique n'est disponible pour ce tirage. Les numéros ont été générés de manière aléatoire. Un modèle d'apprentissage automatique de type réseau neuronal est prévu.",
     };
   }
   return generateLotteryPredictionFlow(input);

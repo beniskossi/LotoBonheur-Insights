@@ -26,7 +26,7 @@ interface NavItem {
 }
 
 interface SubNavItem {
-  href: string;
+  hrefPart: string; // Renamed from href to hrefPart to reflect it's a path segment
   label: string;
   icon: LucideIcon;
 }
@@ -35,11 +35,11 @@ const mainNavItems: NavItem[] = [
   { href: '/', label: 'Accueil', icon: Home, matchExact: true },
 ];
 
-const drawSubNavItems: Omit<SubNavItem, 'href'>[] = [
-  { label: 'Données', icon: Layers },
-  { label: 'Consultant', icon: Lightbulb },
-  { label: 'Statistiques', icon: BarChart3 },
-  { label: 'Prédiction', icon: ShieldCheck },
+const drawSubNavItems: SubNavItem[] = [
+  { label: 'Données', hrefPart: 'donnees', icon: Layers },
+  { label: 'Consulter', hrefPart: 'consulter', icon: Lightbulb },
+  { label: 'Statistiques', hrefPart: 'statistiques', icon: BarChart3 },
+  { label: 'Prédiction', hrefPart: 'prediction', icon: ShieldCheck },
 ];
 
 export default function Sidebar() {
@@ -49,6 +49,12 @@ export default function Sidebar() {
   const isLinkActive = (href: string, matchExact: boolean = false) => {
     if (matchExact) {
       return pathname === href;
+    }
+    // For draw sub-items, we want an exact match for the full path.
+    // e.g. /draw/reveil/donnees should activate "Données" but not /draw/reveil
+    const isSubItemPath = drawSubNavItems.some(subItem => href.endsWith(`/${subItem.hrefPart}`));
+    if (isSubItemPath) {
+        return pathname === href;
     }
     return pathname.startsWith(href);
   };
@@ -75,14 +81,17 @@ export default function Sidebar() {
             {uniqueDrawNames.map((drawName) => {
               const drawSlug = slugifyDrawName(drawName);
               const baseDrawPath = `/draw/${drawSlug}`;
-              const isParentActive = pathname.startsWith(baseDrawPath);
+              // Check if the current path starts with the base path of this accordion item
+              // AND if the part after the baseDrawPath corresponds to one of the subNav items.
+              // This makes the accordion item active only if one of its children is active.
+              const isParentEffectivelyActive = drawSubNavItems.some(subItem => pathname === `${baseDrawPath}/${subItem.hrefPart}`);
 
               return (
                 <AccordionItem key={drawSlug} value={drawSlug}>
                   <AccordionTrigger
                     className={cn(
                       'flex w-full items-center justify-between rounded-md px-3 py-2 text-sm font-medium hover:bg-muted hover:no-underline',
-                      isParentActive && 'bg-muted'
+                       isParentEffectivelyActive && 'bg-muted text-accent-foreground' // More prominent active state for parent
                     )}
                   >
                     {drawName}
@@ -90,11 +99,11 @@ export default function Sidebar() {
                   <AccordionContent className="pb-0">
                     <div className="mt-1 flex flex-col space-y-1 pl-4">
                       {drawSubNavItems.map((subItem) => {
-                        const subHref = `${baseDrawPath}/${subItem.label.toLowerCase()}`;
+                        const subHref = `${baseDrawPath}/${subItem.hrefPart}`;
                         return (
                           <Button
                             key={subItem.label}
-                            variant={isLinkActive(subHref) ? 'secondary' : 'ghost'}
+                            variant={isLinkActive(subHref, true) ? 'secondary' : 'ghost'} // Use exact match for sub-items
                             size="sm"
                             className="justify-start"
                             asChild
@@ -114,7 +123,7 @@ export default function Sidebar() {
           </Accordion>
 
            <Button
-              variant={isLinkActive('/admin') ? 'secondary' : 'ghost'}
+              variant={isLinkActive('/admin', true) ? 'secondary' : 'ghost'}
               className="justify-start mt-4"
               asChild
             >

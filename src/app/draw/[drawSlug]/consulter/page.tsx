@@ -12,16 +12,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Info, Search } from "lucide-react";
+import { Info, Search, Lightbulb } from "lucide-react"; // Added Lightbulb
 
 interface ChartData {
   name: string;
   frequency: number;
 }
 
-export default function ConsultantPage() {
+export default function ConsulterPage() {
   const params = useParams();
   const drawSlug = params.drawSlug as string;
 
@@ -65,7 +65,7 @@ export default function ConsultantPage() {
 
   const handleAnalysisSubmit = useCallback(async () => {
     const num = parseInt(targetNumberInput);
-    if (isNaN(num) || num < 1 || num > 90) { // Assuming lottery numbers are between 1-90
+    if (isNaN(num) || num < 1 || num > 90) { 
       setError("Veuillez entrer un numéro valide (1-90).");
       return;
     }
@@ -94,13 +94,13 @@ export default function ConsultantPage() {
     const chartData: ChartData[] = Object.entries(data)
       .map(([name, frequency]) => ({ name, frequency }))
       .sort((a, b) => b.frequency - a.frequency)
-      .slice(0, 15); // Show top 15 for chart clarity
+      .slice(0, 15); 
 
     if (chartData.length === 0) return <p className="text-muted-foreground mt-2">Aucune donnée de fréquence pertinente.</p>;
 
     return (
       <ResponsiveContainer width="100%" height={300}>
-        <BarChart data={chartData} margin={{ top: 5, right: 20, left: -20, bottom: 5 }}>
+        <RechartsBarChart data={chartData} margin={{ top: 5, right: 20, left: -20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))"/>
           <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" />
           <YAxis stroke="hsl(var(--muted-foreground))"/>
@@ -113,7 +113,7 @@ export default function ConsultantPage() {
           />
           <Legend wrapperStyle={{ color: 'hsl(var(--foreground))' }} />
           <Bar dataKey="frequency" fill="hsl(var(--primary))" name={title} />
-        </BarChart>
+        </RechartsBarChart>
       </ResponsiveContainer>
     );
   };
@@ -138,7 +138,7 @@ export default function ConsultantPage() {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-3xl font-bold text-primary mb-1">Consultant IA: {drawName || 'Chargement...'}</h1>
+        <h1 className="text-3xl font-bold text-primary mb-1">Consulter: {drawName || 'Chargement...'}</h1>
         <p className="text-lg text-muted-foreground">Analysez la régularité d'un numéro spécifique pour ce tirage.</p>
       </header>
 
@@ -198,7 +198,7 @@ export default function ConsultantPage() {
             {analysis.analysisSummary && (
                 <Alert className="bg-primary/5 border-primary/20">
                     <Lightbulb className="h-4 w-4 text-primary" />
-                    <AlertTitle className="text-primary">Résumé de l'IA</AlertTitle>
+                    <AlertTitle className="text-primary">Résumé de l'Analyse</AlertTitle>
                     <AlertDescription>{analysis.analysisSummary}</AlertDescription>
                 </Alert>
             )}

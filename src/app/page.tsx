@@ -12,7 +12,7 @@ export default function HomePage() {
     <div className="space-y-8">
       <section className="text-center py-12">
         <h1 className="text-5xl font-bold tracking-tight text-primary mb-4">
-          Bienvenue sur LotoBonheur Insights
+          Bienvenue sur Lotocrack
         </h1>
         <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
           Votre plateforme complète pour l'analyse des résultats, les statistiques détaillées,
@@ -30,10 +30,10 @@ export default function HomePage() {
         />
         <FeatureCard
           icon={<Lightbulb className="h-8 w-8 text-accent" />}
-          title="Consultant IA"
+          title="Consulter"
           description="Découvrez la régularité des numéros et leurs associations fréquentes."
-          linkText="Consulter l'IA"
-          linkHref={`/draw/${exampleDrawSlug}/consultant`}
+          linkText="Consulter les numéros"
+          linkHref={`/draw/${exampleDrawSlug}/consulter`}
         />
         <FeatureCard
           icon={<BarChart3 className="h-8 w-8 text-accent" />}
@@ -61,8 +61,8 @@ export default function HomePage() {
           </CardHeader>
           <CardContent>
             <p className="text-muted-foreground">
-              Chaque catégorie de tirage (par exemple, 'Reveil', 'Etoile', etc.) possède ses propres sections de données,
-              d'analyse par le consultant IA, de statistiques et de prédictions. Utilisez la navigation
+              Chaque catégorie de tirage (par exemple, 'Réveil', 'Étoile', etc.) possède ses propres sections de données,
+              d'analyse (Consulter), de statistiques et de prédictions. Utilisez la navigation
               à gauche pour plonger dans les détails de chaque tirage.
             </p>
             {uniqueDrawNames.length > 0 && (

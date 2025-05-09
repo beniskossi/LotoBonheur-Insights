@@ -8,7 +8,7 @@
  */
 
 import { ai } from '@/ai/genkit';
-import { z } from 'genkit/zod';
+import { z } from 'genkit';
 import type { LotteryResult } from '@/types/lottery';
 
 export const NumberRegularityInputSchema = z.object({

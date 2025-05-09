@@ -8,7 +8,7 @@
  */
 
 import { ai } from '@/ai/genkit';
-import { z } from 'genkit/zod';
+import { z } from 'genkit';
 import type { LotteryResult } from '@/types/lottery';
 
 export const LotteryStatisticsInputSchema = z.object({
@@ -89,3 +89,4 @@ export const calculateLotteryStatisticsFlow = ai.defineFlow(
 export async function calculateLotteryStatistics(input: LotteryStatisticsInput): Promise<LotteryStatisticsOutput> {
   return calculateLotteryStatisticsFlow(input);
 }
+
