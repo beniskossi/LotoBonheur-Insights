@@ -358,7 +358,7 @@ export default function AdminPage() {
                 Êtes-vous sûr de vouloir supprimer TOUS les résultats pour la catégorie "{categoryToReset}" ? Cette action est irréversible.
               </AlertDialogDescription>
               <AlertDialogFooter>
-                <AlertDialogCancel onClick={() => setCategoryToReset("")}>Annuler</AlertDialogCancel>
+                <AlertDialogCancel onClick={() => { setCategoryToReset(""); setIsResetDialogOpen(false); } }>Annuler</AlertDialogCancel>
                 <AlertDialogAction onClick={confirmResetCategory} disabled={isProcessing} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
                     {isProcessing ? <Loader2 className="animate-spin"/> : "Réinitialiser"}
                 </AlertDialogAction>
@@ -477,7 +477,7 @@ export default function AdminPage() {
           <AlertDialogHeader><AlertDialogTitle>Confirmer la Suppression</AlertDialogTitle></AlertDialogHeader>
           <AlertDialogDescription>Êtes-vous sûr de vouloir supprimer ce résultat ? Cette action est irréversible.</AlertDialogDescription>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setDeletingResultClientId(null)}>Annuler</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => {setDeletingResultClientId(null); setIsDeleteDialogOpen(false);}}>Annuler</AlertDialogCancel>
             <AlertDialogAction onClick={confirmDelete} disabled={isProcessing} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
                 {isProcessing ? <Loader2 className="animate-spin"/> : "Supprimer"}
             </AlertDialogAction>
