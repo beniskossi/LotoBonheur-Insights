@@ -3,9 +3,9 @@
 import type { LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BarChart3, Home, Layers, Lightbulb, ShieldCheck, Settings } from 'lucide-react'; // Removed Download icon as InstallPwaButton handles its own icon
+import { BarChart3, Home, Layers, Lightbulb, ShieldCheck, Settings, CalendarDays } from 'lucide-react';
 
-import { getUniqueDrawNames, slugifyDrawName } from '@/config/draw-schedule';
+import { DRAW_SCHEDULE, slugifyDrawName } from '@/config/draw-schedule';
 import { cn } from '@/lib/utils';
 import {
   Accordion,
@@ -41,25 +41,32 @@ const drawSubNavItems: SubNavItem[] = [
   { label: 'Prédiction', hrefPart: 'prediction', icon: ShieldCheck },
 ];
 
+// Define the order of days for the sidebar
+const orderedDays = [
+  "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"
+];
+
+
 export default function SidebarContentInternal() {
   const pathname = usePathname();
-  const uniqueDrawNames = getUniqueDrawNames();
 
   const isLinkActive = (href: string, matchExact: boolean = false) => {
     if (matchExact) {
       return pathname === href;
     }
+    // For parent items, check if the current path starts with the href
+    // This is a broader check for parent accordion items to be active
     const isSubItemPath = drawSubNavItems.some(subItem => href.endsWith(`/${subItem.hrefPart}`));
     if (isSubItemPath) {
-        return pathname === href;
+        return pathname === href; // Exact match for sub-items
     }
-    return pathname.startsWith(href);
+    return pathname.startsWith(href); // StartsWith for parent items (like a draw name accordion)
   };
+
 
   return (
     <>
-      {/* ScrollArea takes up available vertical space and handles scrolling */}
-      <ScrollArea className="flex-grow py-4"> {/* Use flex-grow to fill space */}
+      <ScrollArea className="flex-grow py-4">
         <nav className="flex flex-col gap-1 px-4">
           {mainNavItems.map((item) => (
             <Button
@@ -76,41 +83,76 @@ export default function SidebarContentInternal() {
           ))}
 
           <Accordion type="multiple" className="w-full">
-            {uniqueDrawNames.map((drawName) => {
-              const drawSlug = slugifyDrawName(drawName);
-              const baseDrawPath = `/draw/${drawSlug}`;
-              const isParentEffectivelyActive = drawSubNavItems.some(subItem => pathname === `${baseDrawPath}/${subItem.hrefPart}`);
+            {orderedDays.map((day) => {
+              const daySchedule = DRAW_SCHEDULE[day];
+              if (!daySchedule) return null;
+
+              const daySlug = slugifyDrawName(day);
+              
+              const isDayEffectivelyActive = Object.values(daySchedule).some(drawNameForDay => {
+                const drawSlugForDay = slugifyDrawName(drawNameForDay);
+                const baseDrawPathForDay = `/draw/${drawSlugForDay}`;
+                return drawSubNavItems.some(subItem => pathname === `${baseDrawPathForDay}/${subItem.hrefPart}`);
+              });
 
               return (
-                <AccordionItem key={drawSlug} value={drawSlug}>
+                <AccordionItem key={daySlug} value={daySlug}>
                   <AccordionTrigger
                     className={cn(
                       'flex w-full items-center justify-between rounded-md px-3 py-2 text-sm font-medium hover:bg-muted hover:no-underline',
-                       isParentEffectivelyActive && 'bg-muted text-accent-foreground'
+                      isDayEffectivelyActive && 'bg-muted text-accent-foreground'
                     )}
                   >
-                    {drawName}
+                    <div className="flex items-center">
+                        <CalendarDays className="mr-2 h-4 w-4" />
+                        {day}
+                    </div>
                   </AccordionTrigger>
-                  <AccordionContent className="pb-0">
-                    <div className="mt-1 flex flex-col space-y-1 pl-4">
-                      {drawSubNavItems.map((subItem) => {
-                        const subHref = `${baseDrawPath}/${subItem.hrefPart}`;
+                  <AccordionContent className="pb-0 pl-2">
+                    <Accordion type="multiple" className="w-full">
+                      {Object.entries(daySchedule).map(([time, drawName]) => {
+                        const drawSlug = slugifyDrawName(drawName);
+                        const baseDrawPath = `/draw/${drawSlug}`;
+                        const isDrawNameEffectivelyActive = drawSubNavItems.some(subItem => pathname === `${baseDrawPath}/${subItem.hrefPart}`);
+                        
+                        // Ensure unique value for nested accordion items
+                        const uniqueAccordionValue = `${daySlug}-${drawSlug}`;
+
                         return (
-                          <Button
-                            key={subItem.label}
-                            variant={isLinkActive(subHref, true) ? 'secondary' : 'ghost'}
-                            size="sm"
-                            className="justify-start"
-                            asChild
-                          >
-                            <Link href={subHref}>
-                              <subItem.icon className="mr-2 h-4 w-4" />
-                              {subItem.label}
-                            </Link>
-                          </Button>
+                          <AccordionItem key={uniqueAccordionValue} value={uniqueAccordionValue}>
+                            <AccordionTrigger
+                              className={cn(
+                                'flex w-full items-center justify-between rounded-md px-3 py-2 text-sm font-medium hover:bg-muted hover:no-underline',
+                                isDrawNameEffectivelyActive && 'bg-muted text-accent-foreground'
+                              )}
+                            >
+                              {time}: {drawName}
+                            </AccordionTrigger>
+                            <AccordionContent className="pb-0">
+                              <div className="mt-1 flex flex-col space-y-1 pl-4">
+                                {drawSubNavItems.map((subItem) => {
+                                  const subHref = `${baseDrawPath}/${subItem.hrefPart}`;
+                                  return (
+                                    <Button
+                                      key={subItem.label}
+                                      variant={isLinkActive(subHref, true) ? 'secondary' : 'ghost'}
+                                      size="sm"
+                                      className="justify-start"
+                                      asChild
+                                    >
+                                      <Link href={subHref}>
+                                        <subItem.icon className="mr-2 h-4 w-4" />
+                                        {subItem.label}
+                                      </Link>
+                                    </Button>
+                                  );
+                                })}
+                              </div>
+                            </AccordionContent>
+                          </AccordionItem>
                         );
                       })}
-                    </div>
+                    </Accordion>
                   </AccordionContent>
                 </AccordionItem>
               );
@@ -129,7 +171,6 @@ export default function SidebarContentInternal() {
             </Button>
         </nav>
       </ScrollArea>
-      {/* InstallPwaButton container pushed to the bottom */}
       <div className="w-full border-t p-4">
         <InstallPwaButton />
       </div>
