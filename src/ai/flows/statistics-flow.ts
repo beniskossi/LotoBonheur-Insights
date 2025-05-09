@@ -8,10 +8,10 @@
  */
 
 import { ai } from '@/ai/genkit';
-import { z } from 'genkit';
+import { z } from 'zod';
 import type { LotteryResult } from '@/types/lottery';
 
-export const LotteryStatisticsInputSchema = z.object({
+const LotteryStatisticsInputSchema = z.object({
   results: z.array(
     z.object({
       draw_name: z.string(),
@@ -29,7 +29,7 @@ const PairFrequenciesSchema = z.record(z.string(), z.number()).describe("Frequen
 const DrawsWithXOddsSchema = z.record(z.string(), z.number()).describe("Number of draws with X odd numbers (e.g., key '3' for 3 odd numbers).");
 const SumFrequenciesSchema = z.record(z.string(), z.number()).describe("Frequency of specific sums of winning numbers (e.g., key '150' for sum 150).");
 
-export const LotteryStatisticsOutputSchema = z.object({
+const LotteryStatisticsOutputSchema = z.object({
   drawName: z.string().describe("The name of the draw category analyzed."),
   totalDrawsAnalyzed: z.number().describe("Total number of draws analyzed for this category."),
   winningNumberFrequencies: NumberFrequencySchema.describe("Frequencies of winning numbers."),
@@ -79,7 +79,7 @@ function getTopNPairs(frequencies: Record<string, number>, n: number): string[] 
       .map(([pair]) => pair);
 }
 
-export const calculateLotteryStatisticsFlow = ai.defineFlow(
+const calculateLotteryStatisticsFlow = ai.defineFlow(
   {
     name: 'calculateLotteryStatisticsFlow',
     inputSchema: LotteryStatisticsInputSchema,

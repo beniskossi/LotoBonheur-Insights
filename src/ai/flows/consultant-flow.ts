@@ -8,10 +8,10 @@
  */
 
 import { ai } from '@/ai/genkit';
-import { z } from 'genkit';
+import { z } from 'zod';
 import type { LotteryResult } from '@/types/lottery';
 
-export const NumberRegularityInputSchema = z.object({
+const NumberRegularityInputSchema = z.object({
   results: z.array(
     z.object({
       draw_name: z.string(),
@@ -28,7 +28,7 @@ export type NumberRegularityInput = z.infer<typeof NumberRegularityInputSchema>;
 const CoOccurrenceSchema = z.record(z.number()).describe("Frequency of other numbers appearing with the target number in the same draw (winning numbers only).");
 const NextDrawAppearanceSchema = z.record(z.number()).describe("Frequency of other numbers appearing in the draw immediately following one where the target number appeared (winning numbers only).");
 
-export const NumberRegularityOutputSchema = z.object({
+const NumberRegularityOutputSchema = z.object({
   drawName: z.string(),
   targetNumber: z.number(),
   totalDrawsWithTarget: z.number().describe("Total draws where the target number appeared as a winning number."),
@@ -47,7 +47,7 @@ function getTopN(frequencies: Record<string, number>, n: number): number[] {
     .map(([num]) => parseInt(num));
 }
 
-export const analyzeNumberRegularityFlow = ai.defineFlow(
+const analyzeNumberRegularityFlow = ai.defineFlow(
   {
     name: 'analyzeNumberRegularityFlow',
     inputSchema: NumberRegularityInputSchema,

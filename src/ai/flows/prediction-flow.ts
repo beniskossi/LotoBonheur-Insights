@@ -9,10 +9,10 @@
  */
 
 import { ai } from '@/ai/genkit';
-import { z } from 'genkit';
+import { z } from 'zod';
 import type { LotteryResult } from '@/types/lottery';
 
-export const LotteryPredictionInputSchema = z.object({
+const LotteryPredictionInputSchema = z.object({
   results: z.array(
     z.object({
       draw_name: z.string(),
@@ -26,7 +26,7 @@ export const LotteryPredictionInputSchema = z.object({
 });
 export type LotteryPredictionInput = z.infer<typeof LotteryPredictionInputSchema>;
 
-export const LotteryPredictionOutputSchema = z.object({
+const LotteryPredictionOutputSchema = z.object({
   drawName: z.string(),
   predictedWinningNumbers: z.array(z.number()).length(5),
   predictedMachineNumbers: z.array(z.number()).length(5),
@@ -86,7 +86,7 @@ function simplePredictionStrategy(historicalResults: LotteryResult[], count: num
   return Array.from(prediction).sort((a,b) => a - b);
 }
 
-export const generateLotteryPredictionFlow = ai.defineFlow(
+const generateLotteryPredictionFlow = ai.defineFlow(
   {
     name: 'generateLotteryPredictionFlow',
     inputSchema: LotteryPredictionInputSchema,
