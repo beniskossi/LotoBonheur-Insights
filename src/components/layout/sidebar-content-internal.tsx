@@ -3,9 +3,10 @@
 import type { LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react'; // Added useEffect, useState
 import { BarChart3, Home, Layers, Lightbulb, ShieldCheck, Settings, CalendarDays } from 'lucide-react';
 
-import { DRAW_SCHEDULE, slugifyDrawName } from '@/config/draw-schedule';
+import { DRAW_SCHEDULE, slugifyDrawName, getUniqueDrawNames } from '@/config/draw-schedule'; // Added getUniqueDrawNames
 import { cn } from '@/lib/utils';
 import {
   Accordion,
@@ -41,7 +42,6 @@ const drawSubNavItems: SubNavItem[] = [
   { label: 'Prédiction', hrefPart: 'prediction', icon: ShieldCheck },
 ];
 
-// Define the order of days for the sidebar
 const orderedDays = [
   "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"
 ];
@@ -49,18 +49,52 @@ const orderedDays = [
 
 export default function SidebarContentInternal() {
   const pathname = usePathname();
+  const [defaultOpenDays, setDefaultOpenDays] = useState<string[]>([]);
+  const [defaultOpenDraws, setDefaultOpenDraws] = useState<string[]>([]);
+
+  useEffect(() => {
+    const activeDaySlugsSet = new Set<string>();
+    const activeDrawSlugsSet = new Set<string>();
+
+    orderedDays.forEach(day => {
+        const daySchedule = DRAW_SCHEDULE[day];
+        if (!daySchedule) return;
+        const currentDaySlug = slugifyDrawName(day);
+
+        let dayHasActiveChild = false;
+        Object.entries(daySchedule).forEach(([_, drawName]) => {
+            const currentDrawSlug = slugifyDrawName(drawName);
+            const baseDrawPath = `/draw/${currentDrawSlug}`;
+            const uniqueAccordionValue = `${currentDaySlug}-${currentDrawSlug}`; 
+
+            const drawHasActiveChild = drawSubNavItems.some(subItem => {
+                const subHref = `${baseDrawPath}/${subItem.hrefPart}`;
+                return pathname === subHref;
+            });
+
+            if (drawHasActiveChild) {
+                activeDrawSlugsSet.add(uniqueAccordionValue);
+                dayHasActiveChild = true;
+            }
+        });
+        if (dayHasActiveChild) {
+            activeDaySlugsSet.add(currentDaySlug);
+        }
+    });
+    setDefaultOpenDays(Array.from(activeDaySlugsSet));
+    setDefaultOpenDraws(Array.from(activeDrawSlugsSet));
+
+  }, [pathname]);
 
   const isLinkActive = (href: string, matchExact: boolean = false) => {
     if (matchExact) {
       return pathname === href;
     }
-    // For parent items, check if the current path starts with the href
-    // This is a broader check for parent accordion items to be active
     const isSubItemPath = drawSubNavItems.some(subItem => href.endsWith(`/${subItem.hrefPart}`));
     if (isSubItemPath) {
-        return pathname === href; // Exact match for sub-items
+        return pathname === href; 
     }
-    return pathname.startsWith(href); // StartsWith for parent items (like a draw name accordion)
+    return pathname.startsWith(href); 
   };
 
 
@@ -82,7 +116,12 @@ export default function SidebarContentInternal() {
             </Button>
           ))}
 
-          <Accordion type="multiple" className="w-full">
+          <Accordion 
+            type="multiple" 
+            className="w-full"
+            defaultValue={defaultOpenDays}
+            key={`days-accordion-${defaultOpenDays.join('-')}`} // Key to re-render with new defaults
+          >
             {orderedDays.map((day) => {
               const daySchedule = DRAW_SCHEDULE[day];
               if (!daySchedule) return null;
@@ -99,8 +138,8 @@ export default function SidebarContentInternal() {
                 <AccordionItem key={daySlug} value={daySlug}>
                   <AccordionTrigger
                     className={cn(
-                      'flex w-full items-center justify-between rounded-md px-3 py-2 text-sm font-medium hover:bg-muted hover:no-underline',
-                      isDayEffectivelyActive && 'bg-muted text-accent-foreground'
+                      'flex w-full items-center justify-between rounded-md px-3 py-2 text-sm font-medium hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:no-underline',
+                      isDayEffectivelyActive && 'bg-sidebar-accent text-sidebar-accent-foreground'
                     )}
                   >
                     <div className="flex items-center">
@@ -109,21 +148,25 @@ export default function SidebarContentInternal() {
                     </div>
                   </AccordionTrigger>
                   <AccordionContent className="pb-0 pl-2">
-                    <Accordion type="multiple" className="w-full">
+                    <Accordion 
+                        type="multiple" 
+                        className="w-full"
+                        defaultValue={defaultOpenDraws}
+                        key={`draws-accordion-${daySlug}-${defaultOpenDraws.join('-')}`} // Key to re-render
+                    >
                       {Object.entries(daySchedule).map(([time, drawName]) => {
                         const drawSlug = slugifyDrawName(drawName);
                         const baseDrawPath = `/draw/${drawSlug}`;
                         const isDrawNameEffectivelyActive = drawSubNavItems.some(subItem => pathname === `${baseDrawPath}/${subItem.hrefPart}`);
                         
-                        // Ensure unique value for nested accordion items
                         const uniqueAccordionValue = `${daySlug}-${drawSlug}`;
 
                         return (
                           <AccordionItem key={uniqueAccordionValue} value={uniqueAccordionValue}>
                             <AccordionTrigger
                               className={cn(
-                                'flex w-full items-center justify-between rounded-md px-3 py-2 text-sm font-medium hover:bg-muted hover:no-underline',
-                                isDrawNameEffectivelyActive && 'bg-muted text-accent-foreground'
+                                'flex w-full items-center justify-between rounded-md px-3 py-2 text-sm font-medium hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:no-underline',
+                                isDrawNameEffectivelyActive && 'bg-sidebar-accent text-sidebar-accent-foreground'
                               )}
                             >
                               {time}: {drawName}
@@ -171,7 +214,7 @@ export default function SidebarContentInternal() {
             </Button>
         </nav>
       </ScrollArea>
-      <div className="w-full border-t p-4">
+      <div className="w-full border-t p-4 border-sidebar-border">
         <InstallPwaButton />
       </div>
     </>

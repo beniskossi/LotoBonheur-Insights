@@ -36,14 +36,14 @@ body {
     --chart-5: 340 75% 55%;
 
     /* Sidebar specific for light - not primary focus */
-    --sidebar-background: 220 15% 97%;
-    --sidebar-foreground: 224 71.4% 4.1%;
-    --sidebar-primary: 220.9 39.3% 11%;
-    --sidebar-primary-foreground: 210 20% 98%;
-    --sidebar-accent: 220 14.3% 94.9%;
-    --sidebar-accent-foreground: 220.9 39.3% 11%;
-    --sidebar-border: 220 13% 88%;
-    --sidebar-ring: 220.9 39.3% 11%;
+    --sidebar-background: 220 15% 97%; /* Light gray */
+    --sidebar-foreground: 224 71.4% 4.1%; /* Dark text */
+    --sidebar-primary: 220.9 39.3% 11%; /* Dark blue for primary items in sidebar */
+    --sidebar-primary-foreground: 210 20% 98%; /* Light text on primary */
+    --sidebar-accent: 220 14.3% 92.9%; /* Slightly darker accent for hover */
+    --sidebar-accent-foreground: 220.9 39.3% 11%; /* Dark text on accent */
+    --sidebar-border: 220 13% 88%; /* Border for sidebar */
+    --sidebar-ring: 220.9 39.3% 11%; /* Ring for focus */
   }
 
   .dark {
@@ -75,14 +75,19 @@ body {
     --chart-5: 0 0% 70%; /* A neutral gray for charts */
 
     /* Dark Sidebar */
-    --sidebar-background: 220 35% 8%; /* Slightly lighter than main background */
+    --sidebar-background: 220 35% 8%; /* Slightly lighter than main background for distinct region */
     --sidebar-foreground: 210 20% 85%; /* Readable text in sidebar */
-    --sidebar-primary: 45 100% 50%; /* Gold for active/primary items in sidebar */
+    
+    /* Sidebar Accent (for hover, active item background) */
+    --sidebar-accent: 220 25% 12%; /* Slightly more prominent accent */
+    --sidebar-accent-foreground: 45 100% 70%; /* Gold text on accent for high visibility of active items */
+    
+    /* Sidebar Primary (if needed for specific elements, otherwise accent is primary focus) */
+    --sidebar-primary: 45 100% 50%; 
     --sidebar-primary-foreground: 220 40% 5%;
-    --sidebar-accent: 220 25% 15%; /* Hover/accent in sidebar */
-    --sidebar-accent-foreground: 210 20% 95%;
-    --sidebar-border: 220 20% 12%;
-    --sidebar-ring: 45 100% 50%;
+    
+    --sidebar-border: 220 20% 12%; /* Subtle border for sidebar elements or its own edge */
+    --sidebar-ring: 45 100% 50%; /* Gold for focus rings within sidebar */
   }
 }
 
