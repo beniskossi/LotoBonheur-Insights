@@ -1,9 +1,7 @@
-'use server';
-
 import { parse, getYear, format } from 'date-fns';
 // import { fr } from 'date-fns/locale'; // fr locale not strictly needed for parsing 'dd/MM'
 import { NextResponse } from 'next/server';
-import { ai } from '@/ai/genkit';
+// import { ai } from '@/ai/genkit'; // ai.netService.fetch is replaced
 import { DRAW_SCHEDULE } from '@/config/draw-schedule';
 
 interface ApiDraw {
@@ -52,14 +50,15 @@ export async function GET(): Promise<NextResponse<FormattedResult[] | { error: s
 
     while (hasMoreData) {
       const url = `${baseUrl}?page=${page}`;
-      const response = await ai.netService.fetch(url, {
+      // Use standard fetch instead of ai.netService.fetch
+      const response = await fetch(url, {
         method: 'GET',
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
           'Accept': 'application/json',
           'Referer': 'https://lotobonheur.ci/resultats',
         },
-        timeout: 15000, // Increased timeout
+        signal: AbortSignal.timeout(15000), // Standard fetch timeout using AbortSignal
       });
 
       if (!response.ok) {
@@ -176,11 +175,10 @@ export async function GET(): Promise<NextResponse<FormattedResult[] | { error: s
   } catch (error: any) {
     console.error(`Error fetching lottery results from ${baseUrl}:`, error);
     let errorMessage = 'Failed to fetch results due to an unexpected error.';
-    if (error.message) {
-        errorMessage = `Failed to fetch results: ${error.message}`;
-    }
-    if (error.cause && (error.cause as any).code === 'UND_ERR_CONNECT_TIMEOUT') {
+    if (error.name === 'TimeoutError') { // Handle fetch timeout specifically
         errorMessage = 'Failed to fetch results: Connection timed out.';
+    } else if (error.message) {
+        errorMessage = `Failed to fetch results: ${error.message}`;
     }
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
