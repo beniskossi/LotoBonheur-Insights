@@ -12,7 +12,7 @@ import ErrorMessage from '@/components/error-message';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Info, ListOrdered, Sigma, Percentile as PercentIcon, TrendingUp } from "lucide-react"; // Using Percentile as Percent
+import { Info, ListOrdered, Sigma, PercentCircle as PercentIcon, TrendingUp } from "lucide-react"; // Using PercentCircle as PercentIcon
 
 interface ChartData {
   name: string;
@@ -249,3 +249,4 @@ export default function DetailedStatisticsPage() {
     </div>
   );
 }
+
