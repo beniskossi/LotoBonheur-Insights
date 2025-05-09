@@ -4,7 +4,7 @@
 import type { LotteryResult } from '@/types/lottery';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable'; // Augments jsPDF
-import pdf from 'pdf-parse'; // For parsing PDF content
+// import pdf from 'pdf-parse'; // Removed static import
 import { DRAW_SCHEDULE, getUniqueDrawNames } from '@/config/draw-schedule';
 import { format, parse as dateParse } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -27,6 +27,7 @@ export async function importLotteryDataFromPdf(formData: FormData): Promise<{ su
   }
 
   try {
+    const pdf = (await import('pdf-parse')).default; // Dynamically import pdf-parse
     const arrayBuffer = await file.arrayBuffer();
     const data = await pdf(Buffer.from(arrayBuffer));
 
