@@ -304,7 +304,21 @@ export default function AdminPage() {
                         <TableCell>{r.machine.join(', ')}</TableCell>
                         <TableCell className="space-x-2">
                             <Button variant="outline" size="icon" onClick={() => openEditDialog(r)}><Edit className="h-4 w-4" /></Button>
-                            <Button variant="destructive" size="icon" onClick={() => { setDeletingResultClientId(r.clientId); setIsDeleteDialogOpen(true); }}><Trash2 className="h-4 w-4" /></Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="destructive" size="icon" onClick={() => setDeletingResultClientId(r.clientId)}><Trash2 className="h-4 w-4" /></Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader><AlertDialogTitle>Confirmer la Suppression</AlertDialogTitle></AlertDialogHeader>
+                                <AlertDialogDescription>Êtes-vous sûr de vouloir supprimer ce résultat ? Cette action est irréversible.</AlertDialogDescription>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel onClick={() => setDeletingResultClientId(null)}>Annuler</AlertDialogCancel>
+                                  <AlertDialogAction onClick={confirmDelete} disabled={isProcessing} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
+                                      {isProcessing ? <Loader2 className="animate-spin"/> : "Supprimer"}
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
                         </TableCell>
                         </TableRow>
                     ))}
@@ -332,11 +346,25 @@ export default function AdminPage() {
               {drawNames.map(name => <SelectItem key={name} value={name}>{name}</SelectItem>)}
             </SelectContent>
           </Select>
-          <AlertDialogTrigger asChild>
-             <Button variant="destructive" disabled={!categoryToReset || isProcessing} onClick={() => setIsResetDialogOpen(true)}>
+          <AlertDialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive" disabled={!categoryToReset || isProcessing}>
                 {isProcessing ? <Loader2 className="animate-spin"/> : <Trash2 />} Réinitialiser la Catégorie
-            </Button>
-          </AlertDialogTrigger>
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader><AlertDialogTitle>Confirmer la Réinitialisation</AlertDialogTitle></AlertDialogHeader>
+              <AlertDialogDescription>
+                Êtes-vous sûr de vouloir supprimer TOUS les résultats pour la catégorie "{categoryToReset}" ? Cette action est irréversible.
+              </AlertDialogDescription>
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => setCategoryToReset("")}>Annuler</AlertDialogCancel>
+                <AlertDialogAction onClick={confirmResetCategory} disabled={isProcessing} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
+                    {isProcessing ? <Loader2 className="animate-spin"/> : "Réinitialiser"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </CardContent>
       </Card>
 
@@ -442,7 +470,8 @@ export default function AdminPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Delete Confirmation Dialog - Note: This one is programmatically opened and doesn't use AlertDialogTrigger */}
+      {/* It is correctly structured if opened via setIsDeleteDialogOpen(true) and not an AlertDialogTrigger */}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader><AlertDialogTitle>Confirmer la Suppression</AlertDialogTitle></AlertDialogHeader>
@@ -456,21 +485,6 @@ export default function AdminPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Reset Category Confirmation Dialog */}
-      <AlertDialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader><AlertDialogTitle>Confirmer la Réinitialisation</AlertDialogTitle></AlertDialogHeader>
-          <AlertDialogDescription>
-            Êtes-vous sûr de vouloir supprimer TOUS les résultats pour la catégorie "{categoryToReset}" ? Cette action est irréversible.
-          </AlertDialogDescription>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setCategoryToReset("")}>Annuler</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmResetCategory} disabled={isProcessing} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
-                 {isProcessing ? <Loader2 className="animate-spin"/> : "Réinitialiser"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
