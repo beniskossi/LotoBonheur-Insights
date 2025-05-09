@@ -1,9 +1,9 @@
 'use client';
 
 import type { LotteryResult } from '@/types/lottery';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { CalendarDays, Ticket, Cog } from 'lucide-react';
+import { CalendarDays, Ticket, Cog, Award } from 'lucide-react'; // Added Award
 
 interface LotteryResultCardProps {
   result: LotteryResult;
@@ -18,49 +18,48 @@ export default function LotteryResultCard({ result }: LotteryResultCardProps) {
         day: 'numeric',
       });
     } catch (error) {
+      // console.warn(`Invalid date string for formatting: ${dateString}`);
       return dateString; // Fallback to original string if date is invalid
     }
   };
 
   return (
-    <Card className="shadow-lg hover:shadow-xl transition-shadow duration-300">
+    <Card className="shadow-lg hover:shadow-xl transition-shadow duration-300 bg-card flex flex-col">
       <CardHeader>
-        <CardTitle className="flex items-center text-primary">
-          <Ticket className="mr-2 h-6 w-6" />
+        <CardTitle className="flex items-center text-primary text-xl">
+          <Ticket className="mr-2 h-5 w-5" />
           {result.draw_name}
         </CardTitle>
-        <CardDescription className="flex items-center">
+        <CardDescription className="flex items-center text-sm">
           <CalendarDays className="mr-2 h-4 w-4" />
           {formatDate(result.date)}
         </CardDescription>
       </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          <div>
-            <h3 className="text-sm font-semibold text-muted-foreground mb-2 flex items-center">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 lucide lucide-award"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/></svg>
-              Numéros Gagnants
-            </h3>
-            <div className="flex flex-wrap gap-2">
-              {result.gagnants.map((num, index) => (
-                <Badge key={`gagnant-${index}`} variant="default" className="text-lg px-3 py-1 bg-accent text-accent-foreground">
-                  {num}
-                </Badge>
-              ))}
-            </div>
+      <CardContent className="flex-grow space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-muted-foreground mb-2 flex items-center">
+            <Award className="mr-2 h-4 w-4 text-accent" /> {/* Changed to Award icon and color */}
+            Numéros Gagnants
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {result.gagnants.map((num, index) => (
+              <Badge key={`gagnant-${index}`} variant="default" className="text-base px-2.5 py-1 bg-accent text-accent-foreground rounded-md">
+                {num}
+              </Badge>
+            ))}
           </div>
-          <div>
-            <h3 className="text-sm font-semibold text-muted-foreground mb-2 flex items-center">
-              <Cog className="mr-2 h-4 w-4" />
-              Numéros Machine
-            </h3>
-            <div className="flex flex-wrap gap-2">
-              {result.machine.map((num, index) => (
-                <Badge key={`machine-${index}`} variant="secondary" className="text-lg px-3 py-1">
-                  {num}
-                </Badge>
-              ))}
-            </div>
+        </div>
+        <div>
+          <h3 className="text-sm font-semibold text-muted-foreground mb-2 flex items-center">
+            <Cog className="mr-2 h-4 w-4" />
+            Numéros Machine
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {result.machine.map((num, index) => (
+              <Badge key={`machine-${index}`} variant="secondary" className="text-base px-2.5 py-1 rounded-md">
+                {num}
+              </Badge>
+            ))}
           </div>
         </div>
       </CardContent>

@@ -1,21 +1,23 @@
 import type {Metadata} from 'next';
-import {Geist, Geist_Mono} from 'next/font/google';
+import { Geist, Geist_Mono } from 'next/font/google'; // Corrected import
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
+import MainLayout from '@/components/layout/main-layout';
 
-const geistSans = Geist({
+const geistSans = Geist({ // Corrected variable name
   variable: '--font-geist-sans',
   subsets: ['latin'],
 });
 
-const geistMono = Geist_Mono({
+const geistMono = Geist_Mono({ // Corrected variable name
   variable: '--font-geist-mono',
   subsets: ['latin'],
 });
 
 export const metadata: Metadata = {
-  title: 'Loto Bonheur Résultats',
-  description: 'Consultez les derniers résultats de Loto Bonheur',
+  title: 'LotoBonheur Insights',
+  description: 'Consultez les résultats, statistiques et prédictions pour Loto Bonheur.',
+  manifest: '/manifest.json', // Added manifest for PWA
 };
 
 export default function RootLayout({
@@ -25,8 +27,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="fr" className="dark">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        {children}
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}>
+        <MainLayout>
+          {children}
+        </MainLayout>
         <Toaster />
       </body>
     </html>

@@ -1,20 +1,10 @@
 'use server';
 
 import { parse, getYear, format } from 'date-fns';
-import { fr } from 'date-fns/locale';
+// import { fr } from 'date-fns/locale'; // fr locale not strictly needed for parsing 'dd/MM'
 import { NextResponse } from 'next/server';
-import { ai } from '@/ai/genkit'; // Assuming genkit is configured for netService
-
-// Draw schedule for standard draws
-const DRAW_SCHEDULE = {
-  Lundi: { '10H': 'Reveil', '13H': 'Etoile', '16H': 'Akwaba', '18H15': 'Monday Special' },
-  Mardi: { '10H': 'La Matinale', '13H': 'Emergence', '16H': 'Sika', '18H15': 'Lucky Tuesday' },
-  Mercredi: { '10H': 'Premiere Heure', '13H': 'Fortune', '16H': 'Baraka', '18H15': 'Midweek' },
-  Jeudi: { '10H': 'Kado', '13H': 'Privilege', '16H': 'Monni', '18H15': 'Fortune Thursday' },
-  Vendredi: { '10H': 'Cash', '13H': 'Solution', '16H': 'Wari', '18H15': 'Friday Bonanza' },
-  Samedi: { '10H': 'Soutra', '13H': 'Diamant', '16H': 'Moaye', '18H15': 'National' },
-  Dimanche: { '10H': 'Benediction', '13H': 'Prestige', '16H': 'Awale', '18H15': 'Espoir' },
-};
+import { ai } from '@/ai/genkit';
+import { DRAW_SCHEDULE } from '@/config/draw-schedule';
 
 interface ApiDraw {
   drawName: string;
@@ -74,59 +64,52 @@ export async function GET(): Promise<NextResponse<FormattedResult[] | { error: s
 
       if (!response.ok) {
         console.warn(`API request failed for page ${page} with status ${response.status}`);
-        // Attempt to parse error if possible
         try {
             const errorBody = await response.json();
             console.error('API error body:', errorBody);
         } catch (e) {
             console.error('Could not parse error body from API');
         }
-        // If it's a client-side error or server error, stop pagination
         if (response.status >= 400 && response.status < 500) {
-             hasMoreData = false; // Stop if client error likely means no more valid pages
+             hasMoreData = false; 
         }
-        // For server errors, we might retry or stop, here we stop
         if (response.status >= 500) {
             hasMoreData = false;
         }
-        page += 1; // Still increment page to avoid infinite loop on persistent error, or break
-        if(page > 20) hasMoreData = false; // Safety break after 20 pages
-        continue; // Try next page or exit loop
+        page += 1; 
+        if(page > 20) hasMoreData = false; 
+        continue; 
       }
       
       const resultsData = await response.json() as ApiResponse;
 
       if (!resultsData.success) {
         console.warn(`API returned unsuccessful response for page ${page}:`, resultsData);
-        hasMoreData = false; // Stop if API explicitly says not successful
+        hasMoreData = false; 
         break;
       }
 
       const drawsResultsWeekly = resultsData.drawsResultsWeekly;
       if (!drawsResultsWeekly || drawsResultsWeekly.length === 0) {
           hasMoreData = resultsData.hasMore || false;
-          if (!hasMoreData) break; // No more data this week and no more pages
+          if (!hasMoreData) break; 
           page +=1;
-          if(page > 20) hasMoreData = false; // Safety break
+          if(page > 20) hasMoreData = false; 
           continue;
       }
 
 
       for (const week of drawsResultsWeekly) {
         for (const dailyResult of week.drawResultsDaily) {
-          const dateStr = dailyResult.date; // e.g., "dimanche 04/05"
+          const dateStr = dailyResult.date; 
           let drawDate: string;
 
           try {
-            const parts = dateStr.split(' '); // ["dimanche", "04/05"]
-            const dayMonth = parts.length > 1 ? parts[1] : parts[0]; // "04/05"
+            const parts = dateStr.split(' '); 
+            const dayMonth = parts.length > 1 ? parts[1] : parts[0]; 
             
-            // Use date-fns to parse with the current year. This assumes draws are for the current year.
-            // The API does not provide year, so we infer it.
-            // 'd/M/yyyy' is more robust than 'dd/MM/yyyy' for single digit days/months
             const parsedDate = parse(dayMonth, 'dd/MM', new Date(currentYear, 0, 1)); 
             if (isNaN(parsedDate.getTime())) {
-                 // try with single digit month
                  const parsedDateSingleMonth = parse(dayMonth, 'dd/M', new Date(currentYear, 0, 1));
                  if (isNaN(parsedDateSingleMonth.getTime())) {
                     console.warn(`Invalid date format after trying multiple patterns: ${dateStr}`);
@@ -168,7 +151,7 @@ export async function GET(): Promise<NextResponse<FormattedResult[] | { error: s
       hasMoreData = resultsData.hasMore || false;
       if(hasMoreData) {
         page += 1;
-        if (page > 20) { // Safety break to prevent infinite loops with faulty API hasMore logic
+        if (page > 20) { 
             console.warn('Reached page limit (20). Stopping pagination.');
             hasMoreData = false;
         }
@@ -179,10 +162,19 @@ export async function GET(): Promise<NextResponse<FormattedResult[] | { error: s
       return NextResponse.json({ error: 'No valid draw results found after fetching all pages.' }, { status: 404 });
     }
 
+    // Sort results by date descending, then by draw_name
+    results.sort((a, b) => {
+      const dateComparison = b.date.localeCompare(a.date);
+      if (dateComparison !== 0) {
+        return dateComparison;
+      }
+      return a.draw_name.localeCompare(b.draw_name);
+    });
+
+
     return NextResponse.json(results, { status: 200 });
   } catch (error: any) {
     console.error(`Error fetching lottery results from ${baseUrl}:`, error);
-    // Check if error is from fetch itself (e.g. network error, timeout)
     let errorMessage = 'Failed to fetch results due to an unexpected error.';
     if (error.message) {
         errorMessage = `Failed to fetch results: ${error.message}`;
