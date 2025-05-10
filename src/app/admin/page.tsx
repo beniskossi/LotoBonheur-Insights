@@ -38,6 +38,48 @@ const lotteryResultSchema = z.object({
 });
 type LotteryFormValues = z.infer<typeof lotteryResultSchema>;
 
+// Helper component for number array input
+interface NumberArrayInputProps {
+  value: number[];
+  onChange: (numbers: number[]) => void;
+  onBlur: () => void;
+  id: string;
+  placeholder: string;
+}
+
+const NumberArrayInput: React.FC<NumberArrayInputProps> = ({ value: rhfValue, onChange: rhfOnChange, onBlur: rhfOnBlur, id, placeholder }) => {
+  const [inputValue, setInputValue] = useState(Array.isArray(rhfValue) ? rhfValue.join(',') : '');
+
+  useEffect(() => {
+    setInputValue(Array.isArray(rhfValue) ? rhfValue.join(',') : '');
+  }, [rhfValue]);
+
+  const parseNumbersString = (str: string): number[] => {
+    if (!str.trim()) return [];
+    return str.split(/[,;\s]+/).map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n >= 1 && n <= 90);
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setInputValue(e.target.value);
+  };
+
+  const handleInputBlur = () => {
+    rhfOnChange(parseNumbersString(inputValue));
+    rhfOnBlur();
+  };
+
+  return (
+    <Input
+      id={id}
+      placeholder={placeholder}
+      onChange={handleInputChange}
+      onBlur={handleInputBlur}
+      value={inputValue}
+    />
+  );
+};
+
+
 export default function AdminPage() {
   const { toast } = useToast();
   const [isImporting, startImportTransition] = useTransition();
@@ -137,15 +179,27 @@ export default function AdminPage() {
       if (result.success && result.data) {
         const newDataWithClientIds = result.data.map(r => ({ ...r, clientId: `${r.draw_name}-${r.date}-${Math.random().toString(36).substr(2, 9)}` }));
         let addedCount = 0;
+        let duplicatesPrevented = 0;
         setAdminData(prevData => {
             const existingKeys = new Set(prevData.map(d => `${d.draw_name}-${d.date}`));
-            const toAdd = newDataWithClientIds.filter(nd => !existingKeys.has(`${nd.draw_name}-${nd.date}`));
+            const toAdd: LotteryResultWithId[] = [];
+            newDataWithClientIds.forEach(nd => {
+                if (!existingKeys.has(`${nd.draw_name}-${nd.date}`)) {
+                    toAdd.push(nd);
+                    existingKeys.add(`${nd.draw_name}-${nd.date}`); // Add to set to prevent duplicates from within the same import batch
+                } else {
+                    duplicatesPrevented++;
+                }
+            });
             addedCount = toAdd.length;
             return [...prevData, ...toAdd].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
         });
         let toastDescription = result.message || `Importation de ${result.originalCount} résultat(s) terminée.`;
         toastDescription += ` ${result.importedCount || 0} résultat(s) correspondaient à votre filtre.`;
-        toastDescription += ` ${addedCount} nouveau(x) résultat(s) ont été ajouté(s) à vos données locales.`;
+        toastDescription += ` ${addedCount} nouveau(x) résultat(s) ont été ajouté(s).`;
+        if (duplicatesPrevented > 0) {
+          toastDescription += ` ${duplicatesPrevented} doublon(s) ont été évité(s).`;
+        }
         toast({ title: "Importation Réussie", description: toastDescription });
 
       } else {
@@ -275,10 +329,6 @@ export default function AdminPage() {
 
   const filteredData = viewCategory === "all" ? adminData : adminData.filter(r => r.draw_name === viewCategory);
 
-  const parseNumbersString = (str: string): number[] => {
-    if (!str.trim()) return [];
-    return str.split(/[,;\s]+/).map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n >= 1 && n <= 90);
-  }
 
   return (
     <div className="space-y-8 p-4 md:p-6 lg:p-8">
@@ -421,6 +471,7 @@ export default function AdminPage() {
       <Card>
         <CardHeader><CardTitle>Réinitialiser les Données par Catégorie</CardTitle></CardHeader>
         <CardContent className="space-y-4">
+          <AlertDialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
             <div className="flex flex-col sm:flex-row gap-4 items-end">
                 <div className="flex-grow">
                     <Label htmlFor="resetCategorySelect">Catégorie à réinitialiser</Label>
@@ -431,26 +482,25 @@ export default function AdminPage() {
                         </SelectContent>
                     </Select>
                 </div>
-                 <AlertDialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
-                    <AlertDialogTrigger asChild>
-                        <Button variant="destructive" disabled={!categoryToReset || isProcessing} onClick={handleResetCategoryClick}>
-                             {isProcessing && categoryToReset ? <Loader2 className="animate-spin mr-2 h-4 w-4"/> : <Trash2 className="mr-2 h-4 w-4" />} Réinitialiser la Catégorie
-                        </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                        <AlertDialogHeader><AlertDialogTitle>Confirmer la Réinitialisation</AlertDialogTitle></AlertDialogHeader>
-                        <AlertDialogDescription>
-                        Êtes-vous sûr de vouloir supprimer TOUS les résultats pour la catégorie "{categoryToReset}" ? Cette action est irréversible.
-                        </AlertDialogDescription>
-                        <AlertDialogFooter>
-                        <AlertDialogCancel onClick={() => { setIsResetDialogOpen(false); } }>Annuler</AlertDialogCancel>
-                        <AlertDialogAction onClick={confirmResetCategory} disabled={isProcessing} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
-                            {isProcessing ? <Loader2 className="animate-spin"/> : "Réinitialiser"}
-                        </AlertDialogAction>
-                        </AlertDialogFooter>
-                    </AlertDialogContent>
-                </AlertDialog>
+                <AlertDialogTrigger asChild>
+                    <Button variant="destructive" disabled={!categoryToReset || isProcessing} onClick={handleResetCategoryClick}>
+                          {isProcessing && categoryToReset ? <Loader2 className="animate-spin mr-2 h-4 w-4"/> : <Trash2 className="mr-2 h-4 w-4" />} Réinitialiser la Catégorie
+                    </Button>
+                </AlertDialogTrigger>
             </div>
+            <AlertDialogContent>
+                <AlertDialogHeader><AlertDialogTitle>Confirmer la Réinitialisation</AlertDialogTitle></AlertDialogHeader>
+                <AlertDialogDescription>
+                Êtes-vous sûr de vouloir supprimer TOUS les résultats pour la catégorie "{categoryToReset}" ? Cette action est irréversible.
+                </AlertDialogDescription>
+                <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => { setIsResetDialogOpen(false); } }>Annuler</AlertDialogCancel>
+                <AlertDialogAction onClick={confirmResetCategory} disabled={isProcessing} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
+                    {isProcessing ? <Loader2 className="animate-spin"/> : "Réinitialiser"}
+                </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </CardContent>
       </Card>
 
@@ -483,7 +533,15 @@ export default function AdminPage() {
               <Controller
                 name="gagnants"
                 control={control}
-                render={({ field }) => <Input id="add_gagnants" placeholder="1,2,3,4,5" onChange={e => field.onChange(parseNumbersString(e.target.value))} value={Array.isArray(field.value) ? field.value.join(',') : ''} />}
+                render={({ field }) => (
+                  <NumberArrayInput
+                    id="add_gagnants"
+                    placeholder="1,2,3,4,5"
+                    value={field.value}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                  />
+                )}
               />
               {errors.gagnants?.message && <p className="text-destructive text-sm">{errors.gagnants.message}</p>}
             </div>
@@ -492,7 +550,15 @@ export default function AdminPage() {
                <Controller
                 name="machine"
                 control={control}
-                render={({ field }) => <Input id="add_machine" placeholder="6,7,8,9,10" onChange={e => field.onChange(parseNumbersString(e.target.value))} value={Array.isArray(field.value) ? field.value.join(',') : ''} />}
+                render={({ field }) => (
+                  <NumberArrayInput
+                    id="add_machine"
+                    placeholder="6,7,8,9,10"
+                    value={field.value}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                  />
+                )}
               />
               {errors.machine?.message && <p className="text-destructive text-sm">{errors.machine.message}</p>}
             </div>
@@ -534,7 +600,15 @@ export default function AdminPage() {
                  <Controller
                     name="gagnants"
                     control={control}
-                    render={({ field }) => <Input id="edit_gagnants" placeholder="1,2,3,4,5" onChange={e => field.onChange(parseNumbersString(e.target.value))} value={Array.isArray(field.value) ? field.value.join(',') : ''} />}
+                    render={({ field }) => (
+                      <NumberArrayInput
+                        id="edit_gagnants"
+                        placeholder="1,2,3,4,5"
+                        value={field.value}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                      />
+                    )}
                 />
                 {errors.gagnants?.message && <p className="text-destructive text-sm">{errors.gagnants.message}</p>}
               </div>
@@ -543,7 +617,15 @@ export default function AdminPage() {
                 <Controller
                     name="machine"
                     control={control}
-                    render={({ field }) => <Input id="edit_machine" placeholder="6,7,8,9,10" onChange={e => field.onChange(parseNumbersString(e.target.value))} value={Array.isArray(field.value) ? field.value.join(',') : ''} />}
+                    render={({ field }) => (
+                      <NumberArrayInput
+                        id="edit_machine"
+                        placeholder="6,7,8,9,10"
+                        value={field.value}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                      />
+                    )}
                 />
                 {errors.machine?.message && <p className="text-destructive text-sm">{errors.machine.message}</p>}
               </div>
