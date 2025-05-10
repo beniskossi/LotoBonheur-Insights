@@ -250,12 +250,11 @@ export default function AdminPage() {
     });
   };
 
-  const handleResetCategoryClick = () => { // Removed category parameter
-    if (!categoryToReset) { // Use state `categoryToReset`
+  const handleResetCategoryClick = () => { 
+    if (!categoryToReset) { 
         toast({title: "Aucune catégorie", description: "Veuillez sélectionner une catégorie à réinitialiser.", variant: "destructive"});
         return;
     }
-    // setCategoryToReset(category); // No longer needed here, already in state
     setIsResetDialogOpen(true); 
   };
 
@@ -472,12 +471,12 @@ export default function AdminPage() {
                   </Select>
                 )}
               />
-              {errors.draw_name && <p className="text-destructive text-sm">{errors.draw_name.message}</p>}
+              {errors.draw_name?.message && <p className="text-destructive text-sm">{errors.draw_name.message}</p>}
             </div>
             <div>
               <Label htmlFor="add_date">Date</Label>
               <Input id="add_date" type="date" {...register("date")} />
-              {errors.date && <p className="text-destructive text-sm">{errors.date.message}</p>}
+              {errors.date?.message && <p className="text-destructive text-sm">{errors.date.message}</p>}
             </div>
             <div>
               <Label htmlFor="add_gagnants">Numéros Gagnants (séparés par virgule/espace)</Label>
@@ -486,7 +485,7 @@ export default function AdminPage() {
                 control={control}
                 render={({ field }) => <Input id="add_gagnants" placeholder="1,2,3,4,5" onChange={e => field.onChange(parseNumbersString(e.target.value))} value={Array.isArray(field.value) ? field.value.join(',') : ''} />}
               />
-              {errors.gagnants && <p className="text-destructive text-sm">{errors.gagnants.root?.message || (errors.gagnants as any).message || (errors.gagnants as any)[0]?.message}</p>}
+              {errors.gagnants?.message && <p className="text-destructive text-sm">{errors.gagnants.message}</p>}
             </div>
              <div>
               <Label htmlFor="add_machine">Numéros Machine (séparés par virgule/espace)</Label>
@@ -495,7 +494,7 @@ export default function AdminPage() {
                 control={control}
                 render={({ field }) => <Input id="add_machine" placeholder="6,7,8,9,10" onChange={e => field.onChange(parseNumbersString(e.target.value))} value={Array.isArray(field.value) ? field.value.join(',') : ''} />}
               />
-              {errors.machine && <p className="text-destructive text-sm">{errors.machine.root?.message || (errors.machine as any).message || (errors.machine as any)[0]?.message}</p>}
+              {errors.machine?.message && <p className="text-destructive text-sm">{errors.machine.message}</p>}
             </div>
             <DialogFooter>
                 <DialogClose asChild><Button type="button" variant="outline">Annuler</Button></DialogClose>
@@ -523,12 +522,12 @@ export default function AdminPage() {
                     </Select>
                     )}
                 />
-                {errors.draw_name && <p className="text-destructive text-sm">{errors.draw_name.message}</p>}
+                {errors.draw_name?.message && <p className="text-destructive text-sm">{errors.draw_name.message}</p>}
               </div>
               <div>
                 <Label htmlFor="edit_date">Date</Label>
                 <Input id="edit_date" type="date" {...register("date")} />
-                {errors.date && <p className="text-destructive text-sm">{errors.date.message}</p>}
+                {errors.date?.message && <p className="text-destructive text-sm">{errors.date.message}</p>}
               </div>
               <div>
                 <Label htmlFor="edit_gagnants">Numéros Gagnants (séparés par virgule/espace)</Label>
@@ -537,7 +536,7 @@ export default function AdminPage() {
                     control={control}
                     render={({ field }) => <Input id="edit_gagnants" placeholder="1,2,3,4,5" onChange={e => field.onChange(parseNumbersString(e.target.value))} value={Array.isArray(field.value) ? field.value.join(',') : ''} />}
                 />
-                {errors.gagnants && <p className="text-destructive text-sm">{errors.gagnants.root?.message || (errors.gagnants as any).message || (errors.gagnants as any)[0]?.message}</p>}
+                {errors.gagnants?.message && <p className="text-destructive text-sm">{errors.gagnants.message}</p>}
               </div>
               <div>
                 <Label htmlFor="edit_machine">Numéros Machine (séparés par virgule/espace)</Label>
@@ -546,7 +545,7 @@ export default function AdminPage() {
                     control={control}
                     render={({ field }) => <Input id="edit_machine" placeholder="6,7,8,9,10" onChange={e => field.onChange(parseNumbersString(e.target.value))} value={Array.isArray(field.value) ? field.value.join(',') : ''} />}
                 />
-                {errors.machine && <p className="text-destructive text-sm">{errors.machine.root?.message || (errors.machine as any).message || (errors.machine as any)[0]?.message}</p>}
+                {errors.machine?.message && <p className="text-destructive text-sm">{errors.machine.message}</p>}
               </div>
               <DialogFooter>
                 <DialogClose asChild><Button type="button" variant="outline" onClick={() => {setIsEditDialogOpen(false); setEditingResult(null);}}>Annuler</Button></DialogClose>
@@ -574,5 +573,3 @@ export default function AdminPage() {
     </div>
   );
 }
-
-    
