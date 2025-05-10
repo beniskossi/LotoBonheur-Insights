@@ -131,9 +131,14 @@ export async function GET(): Promise<NextResponse<FormattedResult[] | { error: s
             }
 
             const winningNumbers = (draw.winningNumbers.match(/\d+/g) || []).map(Number).slice(0, 5);
-            const machineNumbers = (draw.machineNumbers.match(/\d+/g) || []).map(Number).slice(0, 5);
+            let machineNumbers = (draw.machineNumbers.match(/\d+/g) || []).map(Number).slice(0, 5);
 
-            if (winningNumbers.length === 5 && machineNumbers.length === 5) {
+            // Normalize [0,0,0,0,0] to [] for machine numbers
+            if (machineNumbers.length === 5 && machineNumbers.every(n => n === 0)) {
+              machineNumbers = [];
+            }
+
+            if (winningNumbers.length === 5 && (machineNumbers.length === 0 || machineNumbers.length === 5)) {
               results.push({
                 draw_name: drawName,
                 date: drawDate,
@@ -141,7 +146,7 @@ export async function GET(): Promise<NextResponse<FormattedResult[] | { error: s
                 machine: machineNumbers,
               });
             } else {
-              console.warn(`Incomplete data for draw ${drawName} on date ${drawDate}: Winning: ${winningNumbers.join(',')}, Machine: ${machineNumbers.join(',')}`);
+              console.warn(`Incomplete or invalid data for draw ${drawName} on date ${drawDate}: Winning: ${winningNumbers.join(',')}, Machine: ${machineNumbers.join(',')}`);
             }
           }
         }

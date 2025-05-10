@@ -17,9 +17,9 @@ const LotteryResultSchemaForJson = z.object({
     }
   }, { message: "Invalid date format, expected YYYY-MM-DD" }),
   gagnants: z.array(z.number().min(1).max(90)).length(5),
-  machine: z.array(z.number().min(0).max(90)) // Allow 0 for machine numbers if needed, otherwise min(1)
+  machine: z.array(z.number().min(1, "Le numéro machine doit être entre 1 et 90.").max(90, "Le numéro machine doit être entre 1 et 90.")) 
     .refine(arr => arr.length === 0 || arr.length === 5, {
-      message: "Machine numbers must be an empty array or an array of 5 numbers.",
+      message: "Les numéros machine doivent être soit un tableau vide, soit un tableau de 5 numéros.",
     }),
   clientId: z.string().optional(), // clientId is optional in the import file
 });
@@ -154,3 +154,4 @@ export async function deleteLotteryResultAction(clientId: string): Promise<{ suc
 export async function resetCategoryDataAction(category: string): Promise<{ success: boolean; error?: string; message?: string }> {
   return { success: true, message: `Données pour la catégorie ${category} réinitialisées (simulation).` };
 }
+
