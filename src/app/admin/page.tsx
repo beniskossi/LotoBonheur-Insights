@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AlertTriangle, UploadCloud, DownloadCloud, Loader2, PlusCircle, Edit, Trash2, RefreshCw, Eye, ShieldAlert, Info } from "lucide-react";
+import { AlertTriangle, UploadCloud, DownloadCloud, Loader2, PlusCircle, Edit, Trash2, RefreshCw, Eye, ShieldAlert, Info, Filter } from "lucide-react";
 import { useState, useTransition, useEffect, useCallback } from "react";
 import { useForm, Controller, SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -61,6 +61,9 @@ export default function AdminPage() {
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const [categoryToReset, setCategoryToReset] = useState<string>("");
 
+  const [importFilterDrawName, setImportFilterDrawName] = useState<string>("all");
+  const [exportFilterDrawName, setExportFilterDrawName] = useState<string>("all");
+
   const drawNames = getUniqueDrawNames();
 
   const { register, handleSubmit, control, reset, formState: { errors } } = useForm<LotteryFormValues>({
@@ -77,7 +80,6 @@ export default function AdminPage() {
     setIsLoadingData(true);
     setInitialLoadMessage(null);
     try {
-      // Try loading from localStorage first
       const storedData = localStorage.getItem(ADMIN_DATA_STORAGE_KEY);
       if (storedData) {
         setAdminData(JSON.parse(storedData));
@@ -86,7 +88,6 @@ export default function AdminPage() {
         return;
       }
 
-      // If no localStorage data, fetch from API
       const response = await fetch('/api/results'); 
       if (!response.ok) {
          const errorText = await response.text();
@@ -115,9 +116,8 @@ export default function AdminPage() {
     fetchAndInitializeAdminData();
   }, [fetchAndInitializeAdminData]);
 
-  // Save to localStorage whenever adminData changes
   useEffect(() => {
-    if (!isLoadingData) { // Avoid saving during initial load if data is coming from API
+    if (!isLoadingData) { 
       localStorage.setItem(ADMIN_DATA_STORAGE_KEY, JSON.stringify(adminData));
     }
   }, [adminData, isLoadingData]);
@@ -132,14 +132,14 @@ export default function AdminPage() {
     const formData = new FormData();
     formData.append("pdfFile", selectedFile);
     startImportTransition(async () => {
-      const result = await importLotteryDataFromPdf(formData);
+      const result = await importLotteryDataFromPdf(formData, importFilterDrawName === "all" ? null : importFilterDrawName);
       if (result.success && result.data) {
         const newDataWithClientIds = result.data.map(r => ({ ...r, clientId: `${r.draw_name}-${r.date}-${Math.random().toString(36).substr(2, 9)}` }));
         setAdminData(prevData => {
             const existingKeys = new Set(prevData.map(d => `${d.draw_name}-${d.date}`));
             const toAdd = newDataWithClientIds.filter(nd => !existingKeys.has(`${nd.draw_name}-${nd.date}`));
             toast({ title: "Importation Réussie", description: result.message || `${toAdd.length} nouveaux résultats importés et ajoutés.` });
-            return [...prevData, ...toAdd];
+            return [...prevData, ...toAdd].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
         });
       } else {
         toast({ title: "Erreur d'Importation", description: result.error, variant: "destructive" });
@@ -152,7 +152,7 @@ export default function AdminPage() {
 
   const handleExportSubmit = async () => {
     startExportTransition(async () => {
-      const result = await exportLotteryDataToPdf(adminData);
+      const result = await exportLotteryDataToPdf(adminData, exportFilterDrawName === "all" ? null : exportFilterDrawName);
       if (result.success && result.pdfData) {
         const byteCharacters = atob(result.pdfData);
         const byteNumbers = new Array(byteCharacters.length).fill(0).map((_, i) => byteCharacters.charCodeAt(i));
@@ -179,10 +179,9 @@ export default function AdminPage() {
         toast({ title: "Erreur", description: "Un résultat pour ce tirage à cette date existe déjà.", variant: "destructive"});
         return;
       }
-      // Simulate server action, then update local state
-      const actionResult = await addLotteryResultAction(data); // This is a simulated action
+      const actionResult = await addLotteryResultAction(data); 
       if (actionResult.success && actionResult.result) {
-        setAdminData(prev => [...prev, { ...actionResult.result!, clientId: actionResult.result!.clientId || Date.now().toString() }]);
+        setAdminData(prev => [...prev, { ...actionResult.result!, clientId: actionResult.result!.clientId || Date.now().toString() }].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
         toast({ title: "Succès", description: actionResult.message });
         setIsAddDialogOpen(false);
         reset({ draw_name: drawNames.length > 0 ? drawNames[0] : "", date: format(new Date(), 'yyyy-MM-dd'), gagnants: [], machine: [] });
@@ -200,10 +199,9 @@ export default function AdminPage() {
         return;
     }
     startProcessingTransition(async () => {
-      // Simulate server action, then update local state
-      const actionResult = await updateLotteryResultAction(editingResult.clientId, data); // Simulated
+      const actionResult = await updateLotteryResultAction(editingResult.clientId, data); 
       if (actionResult.success && actionResult.result) {
-        setAdminData(prev => prev.map(r => r.clientId === editingResult.clientId ? { ...r, ...actionResult.result!, clientId: editingResult.clientId } : r));
+        setAdminData(prev => prev.map(r => r.clientId === editingResult.clientId ? { ...r, ...actionResult.result!, clientId: editingResult.clientId } : r).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
         toast({ title: "Succès", description: actionResult.message });
         setIsEditDialogOpen(false);
         setEditingResult(null);
@@ -233,8 +231,7 @@ export default function AdminPage() {
   const confirmDelete = async () => {
     if (!deletingResultClientId) return;
     startProcessingTransition(async () => {
-      // Simulate server action, then update local state
-      const actionResult = await deleteLotteryResultAction(deletingResultClientId); // Simulated
+      const actionResult = await deleteLotteryResultAction(deletingResultClientId); 
       if (actionResult.success) {
         setAdminData(prev => prev.filter(r => r.clientId !== deletingResultClientId));
         toast({ title: "Succès", description: actionResult.message });
@@ -252,14 +249,13 @@ export default function AdminPage() {
         return;
     }
     setCategoryToReset(category);
-    setIsResetDialogOpen(true); // This opens the AlertDialog correctly now
+    setIsResetDialogOpen(true); 
   };
 
   const confirmResetCategory = async () => {
     if (!categoryToReset) return;
     startProcessingTransition(async () => {
-      // Simulate server action, then update local state
-      const actionResult = await resetCategoryDataAction(categoryToReset); // Simulated
+      const actionResult = await resetCategoryDataAction(categoryToReset); 
       if (actionResult.success) {
         setAdminData(prev => prev.filter(r => r.draw_name !== categoryToReset));
         toast({ title: "Succès", description: actionResult.message });
@@ -271,8 +267,7 @@ export default function AdminPage() {
     });
   };
 
-  const sortedAdminData = [...adminData].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  const filteredData = viewCategory === "all" ? sortedAdminData : sortedAdminData.filter(r => r.draw_name === viewCategory);
+  const filteredData = viewCategory === "all" ? adminData : adminData.filter(r => r.draw_name === viewCategory);
 
   const parseNumbersString = (str: string): number[] => {
     if (!str.trim()) return [];
@@ -286,7 +281,6 @@ export default function AdminPage() {
           <CardTitle className="text-3xl font-bold">Interface d'Administration LotoBonheur Insights</CardTitle>
           <CardDescription>
             Gestion des données des tirages Loto Bonheur. Les modifications ici affectent les données stockées localement dans votre navigateur.
-            Pour une application de production, une base de données persistante (ex: Firebase) et une authentification robuste sont nécessaires.
           </CardDescription>
         </CardHeader>
          {initialLoadMessage && (
@@ -300,10 +294,10 @@ export default function AdminPage() {
         <CardHeader><CardTitle className="flex items-center"><ShieldAlert className="mr-2 h-5 w-5 text-destructive" /> Authentification et Base de Données</CardTitle></CardHeader>
         <CardContent>
             <p className="text-muted-foreground">
-                <strong>Authentification :</strong> Une authentification sécurisée (par exemple, avec Firebase Auth ou NextAuth.js) est requise pour protéger cette interface en production.
+                <strong>Authentification :</strong> Une authentification sécurisée est requise pour protéger cette interface en production.
             </p>
              <p className="text-muted-foreground mt-2">
-                <strong>Persistance des Données :</strong> Actuellement, les données gérées ici sont stockées dans le `localStorage` de votre navigateur. Pour une solution multi-utilisateurs ou plus robuste, une base de données comme Firebase Firestore est recommandée.
+                <strong>Persistance des Données :</strong> Actuellement, les données sont stockées dans `localStorage`. Pour une solution robuste, une base de données (ex: Firebase Firestore) est recommandée.
             </p>
         </CardContent>
       </Card>
@@ -316,6 +310,17 @@ export default function AdminPage() {
               <Label htmlFor="pdfFile">Fichier PDF</Label>
               <Input id="pdfFile" type="file" accept=".pdf" onChange={handleFileChange} className="mt-1" />
             </div>
+            <div>
+                <Label htmlFor="importFilterDrawName">Filtrer par catégorie de tirage (Optionnel)</Label>
+                <Select value={importFilterDrawName} onValueChange={setImportFilterDrawName}>
+                    <SelectTrigger id="importFilterDrawName"><SelectValue placeholder="Sélectionner une catégorie" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">Toutes les catégories du PDF</SelectItem>
+                        {drawNames.map(name => <SelectItem key={`import-${name}`} value={name}>{name}</SelectItem>)}
+                    </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">Si une catégorie est sélectionnée, seuls les résultats de cette catégorie seront importés depuis le PDF.</p>
+            </div>
             <Button onClick={handleImportSubmit} disabled={isImporting || !selectedFile} className="w-full">
               {isImporting ? <Loader2 className="animate-spin" /> : <UploadCloud />} Importer
             </Button>
@@ -323,7 +328,18 @@ export default function AdminPage() {
         </Card>
         <Card>
           <CardHeader><CardTitle>Exporter les Données (PDF)</CardTitle></CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            <div>
+                <Label htmlFor="exportFilterDrawName">Filtrer par catégorie de tirage (Optionnel)</Label>
+                <Select value={exportFilterDrawName} onValueChange={setExportFilterDrawName}>
+                    <SelectTrigger id="exportFilterDrawName"><SelectValue placeholder="Sélectionner une catégorie" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">Toutes les catégories</SelectItem>
+                        {drawNames.map(name => <SelectItem key={`export-${name}`} value={name}>{name}</SelectItem>)}
+                    </SelectContent>
+                </Select>
+                 <p className="text-xs text-muted-foreground mt-1">Si une catégorie est sélectionnée, seuls les résultats de cette catégorie seront exportés.</p>
+            </div>
             <Button onClick={handleExportSubmit} disabled={isExporting || adminData.length === 0} className="w-full">
               {isExporting ? <Loader2 className="animate-spin" /> : <DownloadCloud />} Exporter
             </Button>
@@ -334,8 +350,8 @@ export default function AdminPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle>Visualiser et Gérer les Données</CardTitle>
-            <CardDescription>Affichez, modifiez ou supprimez les résultats existants.</CardDescription>
+            <CardTitle className="flex items-center"><Eye className="mr-2 h-5 w-5" /> Visualiser et Gérer les Données</CardTitle>
+            <CardDescription>Affichez ({filteredData.length}), modifiez ou supprimez les résultats.</CardDescription>
           </div>
           <Button onClick={() => { reset({ draw_name: drawNames.length > 0 ? drawNames[0] : "", date: format(new Date(), 'yyyy-MM-dd'), gagnants: [], machine: [] }); setIsAddDialogOpen(true); }}>
             <PlusCircle className="mr-2 h-4 w-4" /> Ajouter un Résultat
@@ -343,12 +359,12 @@ export default function AdminPage() {
         </CardHeader>
         <CardContent>
           <div className="mb-4">
-            <Label htmlFor="viewCategory">Filtrer par catégorie</Label>
+            <Label htmlFor="viewCategory" className="flex items-center"><Filter className="mr-2 h-4 w-4" />Filtrer par catégorie</Label>
             <Select value={viewCategory} onValueChange={setViewCategory}>
               <SelectTrigger id="viewCategory"><SelectValue placeholder="Sélectionner une catégorie" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Toutes les catégories</SelectItem>
-                {drawNames.map(name => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+                <SelectItem value="all">Toutes les catégories ({adminData.length})</SelectItem>
+                {drawNames.map(name => <SelectItem key={name} value={name}>{name} ({adminData.filter(r => r.draw_name === name).length})</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -359,9 +375,9 @@ export default function AdminPage() {
                 Aucune donnée à afficher pour {viewCategory === "all" ? "toutes les catégories" : `la catégorie ${viewCategory}`}.
               </div>
             ) : (
-            <div className="overflow-x-auto rounded-md border">
+            <div className="overflow-x-auto rounded-md border max-h-[500px]">
                 <Table>
-                    <TableHeader>
+                    <TableHeader className="sticky top-0 bg-card z-10">
                     <TableRow>
                         <TableHead>Date</TableHead>
                         <TableHead>Tirage</TableHead>
@@ -378,8 +394,8 @@ export default function AdminPage() {
                         <TableCell>{r.gagnants.join(', ')}</TableCell>
                         <TableCell>{r.machine.join(', ')}</TableCell>
                         <TableCell className="space-x-1 text-right">
-                            <Button variant="outline" size="icon" onClick={() => openEditDialog(r)}><Edit className="h-4 w-4" /></Button>
-                            <Button variant="destructive" size="icon" onClick={() => handleDeleteClick(r.clientId!)}><Trash2 className="h-4 w-4" /></Button>
+                            <Button variant="outline" size="icon" onClick={() => openEditDialog(r)} aria-label={`Modifier le résultat du ${format(parseISO(r.date), 'dd/MM/yyyy')} pour ${r.draw_name}`}><Edit className="h-4 w-4" /></Button>
+                            <Button variant="destructive" size="icon" onClick={() => handleDeleteClick(r.clientId!)} aria-label={`Supprimer le résultat du ${format(parseISO(r.date), 'dd/MM/yyyy')} pour ${r.draw_name}`}><Trash2 className="h-4 w-4" /></Button>
                         </TableCell>
                         </TableRow>
                     ))}
@@ -391,7 +407,7 @@ export default function AdminPage() {
         <CardFooter>
             <Button onClick={fetchAndInitializeAdminData} variant="outline" disabled={isLoadingData}>
                 <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingData ? 'animate-spin' : ''}`} />
-                Recharger les Données depuis l'API (Écrase les données locales)
+                Recharger les Données (Écrase les données locales actuelles)
             </Button>
         </CardFooter>
       </Card>
@@ -405,14 +421,14 @@ export default function AdminPage() {
                     <Select value={categoryToReset} onValueChange={setCategoryToReset}>
                         <SelectTrigger id="resetCategorySelect"><SelectValue placeholder="Sélectionner une catégorie" /></SelectTrigger>
                         <SelectContent>
-                        {drawNames.map(name => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+                        {drawNames.map(name => <SelectItem key={`reset-${name}`} value={name}>{name}</SelectItem>)}
                         </SelectContent>
                     </Select>
                 </div>
-                <AlertDialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
+                 <AlertDialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
                     <AlertDialogTrigger asChild>
-                        <Button variant="destructive" disabled={!categoryToReset || isProcessing} onClick={() => handleResetCategoryClick(categoryToReset)}>
-                            {isProcessing && categoryToReset ? <Loader2 className="animate-spin mr-2 h-4 w-4"/> : <Trash2 className="mr-2 h-4 w-4" />} Réinitialiser la Catégorie
+                        <Button variant="destructive" disabled={!categoryToReset || isProcessing} onClick={() => setIsResetDialogOpen(true)}>
+                             {isProcessing && categoryToReset ? <Loader2 className="animate-spin mr-2 h-4 w-4"/> : <Trash2 className="mr-2 h-4 w-4" />} Réinitialiser la Catégorie
                         </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
@@ -445,7 +461,7 @@ export default function AdminPage() {
                 render={({ field }) => (
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <SelectTrigger id="add_draw_name"><SelectValue placeholder="Sélectionner tirage" /></SelectTrigger>
-                    <SelectContent>{drawNames.map(name => <SelectItem key={name} value={name}>{name}</SelectItem>)}</SelectContent>
+                    <SelectContent>{drawNames.map(name => <SelectItem key={`add-select-${name}`} value={name}>{name}</SelectItem>)}</SelectContent>
                   </Select>
                 )}
               />
@@ -496,7 +512,7 @@ export default function AdminPage() {
                     render={({ field }) => (
                     <Select onValueChange={field.onChange} value={field.value}>
                         <SelectTrigger id="edit_draw_name"><SelectValue placeholder="Sélectionner tirage" /></SelectTrigger>
-                        <SelectContent>{drawNames.map(name => <SelectItem key={name} value={name}>{name}</SelectItem>)}</SelectContent>
+                        <SelectContent>{drawNames.map(name => <SelectItem key={`edit-select-${name}`} value={name}>{name}</SelectItem>)}</SelectContent>
                     </Select>
                     )}
                 />
