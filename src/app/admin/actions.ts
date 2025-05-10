@@ -146,10 +146,6 @@ export async function importLotteryDataFromPdf(
 
   } catch (error: any) {
     console.error('Error parsing PDF for import:', error);
-    // Check if the error is the specific ENOENT for the test file
-    if (error.message && error.message.includes('./test/data/05-versions-space.pdf')) {
-        return { success: false, error: `Erreur interne lors de l'analyse du PDF (pdf-parse): Impossible d'accéder à un fichier de test interne. Vérifiez l'installation de la librairie ou essayez un autre fichier PDF. Detail: ${error.message}` };
-    }
     return { success: false, error: `Erreur lors de l'analyse du PDF: ${error.message}` };
   }
 }
@@ -286,3 +282,4 @@ export async function deleteLotteryResultAction(clientId: string): Promise<{ suc
 export async function resetCategoryDataAction(category: string): Promise<{ success: boolean; error?: string; message?: string }> {
   return { success: true, message: `Données pour la catégorie ${category} réinitialisées (simulation).` };
 }
+
