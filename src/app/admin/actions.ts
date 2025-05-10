@@ -165,7 +165,7 @@ export async function exportLotteryDataToPdf(results: LotteryResult[]): Promise<
     const pdfOutput = doc.output('datauristring');
     const base64Data = pdfOutput.substring(pdfOutput.indexOf(',') + 1);
     const currentDate = format(new Date(), 'yyyyMMdd_HHmmss');
-    const fileName = `Lotocrack_Export_Admin_${currentDate}.pdf`;
+    const fileName = `LotoBonheurInsights_Export_Admin_${currentDate}.pdf`;
 
     return { success: true, pdfData: base64Data, fileName };
 

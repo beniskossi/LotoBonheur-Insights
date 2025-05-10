@@ -12,7 +12,7 @@ export default function HomePage() {
     <div className="space-y-8">
       <section className="text-center py-12">
         <h1 className="text-5xl font-bold tracking-tight text-primary mb-4">
-          Bienvenue sur Lotocrack
+          Bienvenue sur LotoBonheur Insights
         </h1>
         <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
           Votre plateforme complète pour l'analyse des résultats, les statistiques détaillées,

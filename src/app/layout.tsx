@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({ // Corrected variable name
 });
 
 export const metadata: Metadata = {
-  title: 'Lotocrack',
+  title: 'LotoBonheur Insights',
   description: 'Consultez les résultats, statistiques et prédictions pour Loto Bonheur.',
   manifest: '/manifest.json', // Added manifest for PWA
 };

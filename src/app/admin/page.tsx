@@ -21,7 +21,7 @@ import { getUniqueDrawNames } from "@/config/draw-schedule";
 import { format, parseISO, isValid, parse as dateParse } from 'date-fns';
 
 type LotteryResultWithId = LotteryResult & { clientId: string };
-const ADMIN_DATA_STORAGE_KEY = 'lotocrackAdminData';
+const ADMIN_DATA_STORAGE_KEY = 'lotoBonheurInsightsAdminData';
 
 const lotteryResultSchema = z.object({
   draw_name: z.string().min(1, "Le nom du tirage est requis."),
@@ -160,7 +160,7 @@ export default function AdminPage() {
         const blob = new Blob([byteArray], { type: 'application/pdf' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = result.fileName || 'lotocrack_export_admin.pdf';
+        link.download = result.fileName || 'LotoBonheurInsights_export_admin.pdf';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -252,7 +252,7 @@ export default function AdminPage() {
         return;
     }
     setCategoryToReset(category);
-    setIsResetDialogOpen(true);
+    setIsResetDialogOpen(true); // This opens the AlertDialog correctly now
   };
 
   const confirmResetCategory = async () => {
@@ -283,7 +283,7 @@ export default function AdminPage() {
     <div className="space-y-8 p-4 md:p-6 lg:p-8">
       <Card>
         <CardHeader>
-          <CardTitle className="text-3xl font-bold">Interface d'Administration</CardTitle>
+          <CardTitle className="text-3xl font-bold">Interface d'Administration LotoBonheur Insights</CardTitle>
           <CardDescription>
             Gestion des données des tirages Loto Bonheur. Les modifications ici affectent les données stockées localement dans votre navigateur.
             Pour une application de production, une base de données persistante (ex: Firebase) et une authentification robuste sont nécessaires.
@@ -401,18 +401,18 @@ export default function AdminPage() {
         <CardContent className="space-y-4">
             <div className="flex flex-col sm:flex-row gap-4 items-end">
                 <div className="flex-grow">
-                    <Label htmlFor="resetCategory">Catégorie à réinitialiser</Label>
+                    <Label htmlFor="resetCategorySelect">Catégorie à réinitialiser</Label>
                     <Select value={categoryToReset} onValueChange={setCategoryToReset}>
-                        <SelectTrigger id="resetCategory"><SelectValue placeholder="Sélectionner une catégorie" /></SelectTrigger>
+                        <SelectTrigger id="resetCategorySelect"><SelectValue placeholder="Sélectionner une catégorie" /></SelectTrigger>
                         <SelectContent>
                         {drawNames.map(name => <SelectItem key={name} value={name}>{name}</SelectItem>)}
                         </SelectContent>
                     </Select>
                 </div>
-                <AlertDialog>
+                <AlertDialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
                     <AlertDialogTrigger asChild>
-                        <Button variant="destructive" disabled={!categoryToReset || isProcessing} className="w-full sm:w-auto">
-                            <Trash2 className="mr-2 h-4 w-4" /> Réinitialiser la Catégorie
+                        <Button variant="destructive" disabled={!categoryToReset || isProcessing} onClick={() => handleResetCategoryClick(categoryToReset)}>
+                            {isProcessing && categoryToReset ? <Loader2 className="animate-spin mr-2 h-4 w-4"/> : <Trash2 className="mr-2 h-4 w-4" />} Réinitialiser la Catégorie
                         </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
@@ -548,7 +548,6 @@ export default function AdminPage() {
         </AlertDialogContent>
       </AlertDialog>
       
-      {/* Reset Category Confirmation Dialog: This is now integrated into the Card above using AlertDialogTrigger directly */}
     </div>
   );
 }

@@ -3,6 +3,8 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetDescription, SheetTrigger } from '@/components/ui/sheet';
 import { Menu, BarChartBig } from 'lucide-react';
 import SidebarContentInternal from './sidebar-content-internal'; // Import the internal content
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
+
 
 export default function Header() {
   return (
@@ -18,14 +20,14 @@ export default function Header() {
           </SheetTrigger>
           {/* SheetContent for mobile: hidden on sm+ screens, flex-column for layout */}
           <SheetContent side="left" className="flex w-3/4 flex-col bg-card p-0 pt-10 sm:hidden">
-            <SheetTitle className="sr-only">Menu Principal</SheetTitle>
-            <SheetDescription className="sr-only">Naviguez à travers les sections de Lotocrack.</SheetDescription>
+            <VisuallyHidden><SheetTitle>Menu Principal Mobile</SheetTitle></VisuallyHidden>
+            <VisuallyHidden><SheetDescription>Naviguez à travers les sections de LotoBonheur Insights.</SheetDescription></VisuallyHidden>
             <SidebarContentInternal /> {/* Embed internal sidebar content */}
           </SheetContent>
         </Sheet>
         <Link href="/" className="ml-2 flex items-center gap-2 sm:ml-0" prefetch={false}>
           <BarChartBig className="h-7 w-7 text-primary" />
-          <span className="text-xl font-semibold">Lotocrack</span>
+          <span className="text-xl font-semibold">LotoBonheur Insights</span>
         </Link>
       </div>
       {/* Placeholder for any header actions on the right */}
