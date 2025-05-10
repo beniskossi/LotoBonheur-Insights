@@ -30,7 +30,9 @@ const LotteryPredictionInputSchema = z.object({
       draw_name: z.string(),
       date: z.string(), // YYYY-MM-DD
       gagnants: z.array(z.number()),
-      machine: z.array(z.number()),
+      machine: z.array(z.number()).refine(arr => arr.length === 0 || arr.length === 5, {
+        message: "Les numéros machine doivent être soit 0 (aucun) soit 5 numéros.",
+      }),
     })
   ).describe("List of historical lottery results for a specific draw category."),
   drawName: z.string().describe("The name of the draw category for which to predict."),
@@ -264,19 +266,19 @@ function predictByHybrid(allMethodPredictions: SinglePrediction[], count: number
 
   // Calculate hybrid confidence (simplified)
   let avgConfidenceScore = 0;
-  if (predictedNumbers.length > 0) {
+  if (predictedNumbers.length > 0 && allMethodPredictions.length > 0) {
     predictedNumbers.forEach(num => {
         allMethodPredictions.forEach(p => {
             if(p.predictedNumbers.includes(num)) avgConfidenceScore += (confidenceWeights[p.confidence] || 1);
         })
     });
-    avgConfidenceScore = avgConfidenceScore / (predictedNumbers.length * allMethodPredictions.length);
+    avgConfidenceScore = avgConfidenceScore / (predictedNumbers.length * allMethodPredictions.length); // Average score per predicted number per method
   }
   
   let hybridConfidence = "Faible";
   if (avgConfidenceScore > 1.5) hybridConfidence = "Élevée";
-  else if (avgConfidenceScore > 1) hybridConfidence = "Moyenne";
-  else if (avgConfidenceScore > 0.5) hybridConfidence = "Faible";
+  else if (avgConfidenceScore > 1.0) hybridConfidence = "Moyenne"; // Adjusted threshold
+  else if (avgConfidenceScore >= 0.5) hybridConfidence = "Faible"; // Adjusted threshold
   else hybridConfidence = "Très faible";
   
   if (allMethodPredictions.length === 0 || allMethodPredictions.every(p => p.confidence === "Très faible")) {
@@ -325,7 +327,7 @@ const generateLotteryPredictionFlow = ai.defineFlow(
     }
     
     // Gagnants only for these methods
-    const gagnantsResults = results.map(r => ({...r, gagnants: r.gagnants.slice(0, NUMBERS_TO_PREDICT)}));
+    const gagnantsResults = results.map(r => ({...r, gagnants: r.gagnants.slice(0, NUMBERS_TO_PREDICT), machine: r.machine ? r.machine : [] }));
 
 
     const frequencyPrediction = predictByFrequency(gagnantsResults, NUMBERS_TO_PREDICT);
@@ -342,13 +344,17 @@ const generateLotteryPredictionFlow = ai.defineFlow(
 
     const hybridPrediction = predictByHybrid(allPredictions, NUMBERS_TO_PREDICT);
     
-    // Insert hybrid as first in allPredictions for UI convenience if needed, or keep it separate
-    // For now, recommendedPrediction is the hybrid one.
-    allPredictions.push(hybridPrediction); // Add hybrid to the list as well
+    // Add hybrid to the list as well, then sort to ensure "Hybride (Recommandé)" is always first.
+    const finalPredictions = [...allPredictions, hybridPrediction]
+      .filter((value, index, self) => // Remove duplicate if hybrid has same name as one of the methods (shouldn't happen with current naming)
+          index === self.findIndex((t) => t.methodName === value.methodName)
+      )
+      .sort((a,b) => (a.methodName === "Hybride (Recommandé)" ? -1 : b.methodName === "Hybride (Recommandé)" ? 1 : a.methodName.localeCompare(b.methodName)));
+
 
     return {
       drawName,
-      allPredictions: allPredictions.sort((a,b) => (a.methodName === "Hybride (Recommandé)" ? -1 : b.methodName === "Hybride (Recommandé)" ? 1 : 0)), // Hybrid first
+      allPredictions: finalPredictions,
       recommendedPrediction: hybridPrediction,
       dataSummary,
     };
@@ -358,3 +364,4 @@ const generateLotteryPredictionFlow = ai.defineFlow(
 export async function generateLotteryPrediction(input: LotteryPredictionInput): Promise<LotteryPredictionOutput> {
   return generateLotteryPredictionFlow(input);
 }
+

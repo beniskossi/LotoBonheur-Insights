@@ -47,8 +47,9 @@ export async function importLotteryDataFromPdf(
     let currentDrawName: string | null = null;
     const uniqueDrawNames = getUniqueDrawNames();
     
-    const drawNameTitlePattern = /TIRAGE DE (?:\d{1,2}H\d{0,2}\s+)?(.+)/i; // Adjusted to handle 10H as well as 10H00
-    const dataLinePattern = /^(\d+)\s+([\d]{1,2}\s+[a-zA-Zûüäâéèêëïîôöùç]+\s+\d{4})\s+((?:\s*\d{1,2}){10,})/;
+    const drawNameTitlePattern = /TIRAGE DE (?:\d{1,2}H\d{0,2}\s+)?(.+)/i;
+    // Regex to capture 5 to 10 numbers (inclusive for Gagnants, optional Machine)
+    const dataLinePattern = /^(\d+)\s+([\d]{1,2}\s+[a-zA-Zûüäâéèêëïîôöùç]+\s+\d{4})\s+((?:\s*\d{1,2}){5,10})/;
 
 
     for (const line of lines) {
@@ -57,10 +58,8 @@ export async function importLotteryDataFromPdf(
 
       if (drawNameMatch && drawNameMatch[1]) {
         const parsedDrawNameFromTitle = drawNameMatch[1].trim();
-        // Attempt to match parsedDrawNameFromTitle with known uniqueDrawNames
         currentDrawName = uniqueDrawNames.find(dn => dn.toUpperCase() === parsedDrawNameFromTitle.toUpperCase()) || null;
         if (!currentDrawName) {
-            // Fallback: if direct match fails, try partial match for names like "MONDAY SPECIAL" in "TIRAGE DE MONDAY SPECIAL"
             currentDrawName = uniqueDrawNames.find(dn => parsedDrawNameFromTitle.includes(dn.toUpperCase())) || null;
         }
         continue; 
@@ -74,10 +73,8 @@ export async function importLotteryDataFromPdf(
         
         let parsedDate: Date;
         try {
-          // Try parsing with full month name first
           parsedDate = dateParse(dateStr, "d MMMM yyyy", new Date(), { locale: fr });
           if (isNaN(parsedDate.getTime())) {
-            // Fallback to dd/MM/yyyy if full month name parsing fails or is not the format
             parsedDate = dateParse(dateStr, "dd/MM/yyyy", new Date(), { locale: fr });
           }
         } catch (e) {
@@ -93,12 +90,13 @@ export async function importLotteryDataFromPdf(
         
         const allNumbers = Array.from(numbersStr.matchAll(/(\d{1,2})/g)).map(m => parseInt(m[1]));
 
-        if (allNumbers.length >= 10) { // Expecting at least 5 gagnants and 5 machine
+        if (allNumbers.length >= 5) { // Must have at least 5 gagnants
           const gagnants = allNumbers.slice(0, 5);
-          const machine = allNumbers.slice(5, 10); 
+          const machine = allNumbers.length >= 10 ? allNumbers.slice(5, 10) : []; // Machine numbers are optional
+          
           const isValidNumber = (n: number) => n >= 1 && n <= 90;
 
-          if (gagnants.every(isValidNumber) && machine.every(isValidNumber)) {
+          if (gagnants.every(isValidNumber) && (machine.length === 0 || machine.every(isValidNumber))) {
             allImportedResults.push({
               draw_name: currentDrawName,
               date: formattedDate,
@@ -109,7 +107,7 @@ export async function importLotteryDataFromPdf(
              console.warn(`Invalid numbers in PDF line for ${currentDrawName} on ${formattedDate}: Gagnants: ${gagnants.join(',')}, Machine: ${machine.join(',')}`);
           }
         } else {
-             console.warn(`Not enough numbers in PDF line for ${currentDrawName} on ${formattedDate}: Found ${allNumbers.length} numbers.`);
+             console.warn(`Not enough numbers for Gagnants in PDF line for ${currentDrawName} on ${formattedDate}: Found ${allNumbers.length} numbers.`);
         }
       }
     }
@@ -121,7 +119,7 @@ export async function importLotteryDataFromPdf(
       filteredResults = allImportedResults.filter(r => r.draw_name === filterDrawName);
     }
     
-    const importedCount = filteredResults.length; // This is the count of items returned in `data`
+    const importedCount = filteredResults.length; 
 
     if (originalCount === 0 && lines.length > 0) {
       return { success: false, error: 'Aucune donnée de tirage valide n\'a pu être extraite du PDF. Vérifiez le format du titre du tirage (ex: TIRAGE DE 10H REVEIL ou TIRAGE DE MONDAY SPECIAL) et des lignes de données.' };
@@ -192,8 +190,8 @@ export async function exportLotteryDataToPdf(
         [
           { content: 'Tirage N°', rowSpan: 2, styles: { valign: 'middle', halign: 'center', fontStyle: 'bold', fillColor: [230, 230, 230] } },
           { content: 'Date', rowSpan: 2, styles: { valign: 'middle', halign: 'center', fontStyle: 'bold', fillColor: [230, 230, 230] } },
-          { content: '5 PREMIERS CHIFFRES TIRÉS (GAGNANTS)', colSpan: 5, styles: { halign: 'center', fontStyle: 'bold', fillColor: [200, 220, 255] } },
-          { content: '5 DERNIERS CHIFFRES TIRÉS (MACHINE)', colSpan: 5, styles: { halign: 'center', fontStyle: 'bold', fillColor: [255, 220, 200] } }
+          { content: 'GAGNANTS', colSpan: 5, styles: { halign: 'center', fontStyle: 'bold', fillColor: [200, 220, 255] } },
+          { content: 'MACHINE (Optionnel)', colSpan: 5, styles: { halign: 'center', fontStyle: 'bold', fillColor: [255, 220, 200] } }
         ],
         [ // Sub-headers for numbers
           'N°1', 'N°2', 'N°3', 'N°4', 'N°5', // Gagnants
@@ -207,7 +205,8 @@ export async function exportLotteryDataToPdf(
       drawResults.forEach((result, index) => {
         const formattedDate = format(dateParse(result.date, 'yyyy-MM-dd', new Date()), 'dd MMMM yyyy', { locale: fr });
         const tirageNo = totalDrawsInCategory - index; 
-        const rowData = [tirageNo, formattedDate, ...result.gagnants, ...result.machine];
+        const machineNumbers = result.machine && result.machine.length > 0 ? result.machine : Array(5).fill('-'); // Display '-' if no machine numbers
+        const rowData = [tirageNo, formattedDate, ...result.gagnants, ...machineNumbers];
         tableRows.push(rowData);
       });
 
@@ -217,12 +216,10 @@ export async function exportLotteryDataToPdf(
         startY: 30,
         theme: 'grid',
         headStyles: { fontStyle: 'bold', halign: 'center', fontSize: 8, cellPadding: 1.5 },
-        columnStyles: { // Adjust column widths as needed
-          0: { halign: 'center', cellWidth: 15 }, // Tirage N°
-          1: { halign: 'left', cellWidth: 25 },   // Date
-          // Gagnants
+        columnStyles: { 
+          0: { halign: 'center', cellWidth: 15 }, 
+          1: { halign: 'left', cellWidth: 25 },   
           2: { halign: 'center', cellWidth: 'auto' }, 3: { halign: 'center', cellWidth: 'auto' }, 4: { halign: 'center', cellWidth: 'auto' }, 5: { halign: 'center', cellWidth: 'auto' }, 6: { halign: 'center', cellWidth: 'auto' },
-          // Machine
           7: { halign: 'center', cellWidth: 'auto' }, 8: { halign: 'center', cellWidth: 'auto' }, 9: { halign: 'center', cellWidth: 'auto' }, 10: { halign: 'center', cellWidth: 'auto' }, 11: { halign: 'center', cellWidth: 'auto' },
         },
         styles: { fontSize: 8, cellPadding: 1.5, overflow: 'linebreak' },
@@ -236,7 +233,7 @@ export async function exportLotteryDataToPdf(
     const pdfOutput = doc.output('datauristring');
     const base64Data = pdfOutput.substring(pdfOutput.indexOf(',') + 1);
     const currentDate = format(new Date(), 'yyyyMMdd_HHmmss');
-    const fileName = `LotoBonheurInsights_Export_Admin_${filterDrawName && filterDrawName !== "all" ? filterDrawName.replace(/\s+/g, '_') : 'Tous'}_${currentDate}.pdf`;
+    const fileName = `Lotocrack_Export_Admin_${filterDrawName && filterDrawName !== "all" ? filterDrawName.replace(/\s+/g, '_') : 'Tous'}_${currentDate}.pdf`; // Updated app name
 
     return { success: true, pdfData: base64Data, fileName };
 
@@ -249,12 +246,20 @@ export async function exportLotteryDataToPdf(
 
 // Placeholder CRUD actions
 export async function addLotteryResultAction(resultData: Omit<LotteryResult, 'clientId'>): Promise<{ success: boolean; error?: string; message?: string, result?: LotteryResult }> {
-  const newResult = { ...resultData, clientId: Date.now().toString() }; 
+  const newResult = { 
+    ...resultData, 
+    machine: Array.isArray(resultData.machine) ? resultData.machine : [], // Ensure machine is an array
+    clientId: Date.now().toString() 
+  }; 
   return { success: true, message: "Résultat ajouté avec succès (simulation).", result: newResult };
 }
 
 export async function updateLotteryResultAction(clientId: string, resultData: Partial<Omit<LotteryResult, 'clientId'>>): Promise<{ success: boolean; error?: string; message?: string, result?: LotteryResult }> {
-  const updatedResult = { clientId, ...resultData } as LotteryResult; 
+  const updatedResult = { 
+      clientId, 
+      ...resultData,
+      machine: Array.isArray(resultData.machine) ? resultData.machine : [], // Ensure machine is an array
+    } as LotteryResult; 
   return { success: true, message: "Résultat mis à jour avec succès (simulation).", result: updatedResult };
 }
 

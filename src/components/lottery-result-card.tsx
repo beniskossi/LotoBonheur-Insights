@@ -23,6 +23,8 @@ export default function LotteryResultCard({ result }: LotteryResultCardProps) {
     }
   };
 
+  const hasMachineNumbers = result.machine && result.machine.length > 0;
+
   return (
     <Card className="shadow-lg hover:shadow-xl transition-shadow duration-300 bg-card flex flex-col">
       <CardHeader>
@@ -54,15 +56,20 @@ export default function LotteryResultCard({ result }: LotteryResultCardProps) {
             <Cog className="mr-2 h-4 w-4" />
             Numéros Machine
           </h3>
-          <div className="flex flex-wrap gap-2">
-            {result.machine.map((num, index) => (
-              <Badge key={`machine-${index}`} variant="secondary" className="text-base px-2.5 py-1 rounded-md">
-                {num}
-              </Badge>
-            ))}
-          </div>
+          {hasMachineNumbers ? (
+            <div className="flex flex-wrap gap-2">
+              {result.machine.map((num, index) => (
+                <Badge key={`machine-${index}`} variant="secondary" className="text-base px-2.5 py-1 rounded-md">
+                  {num}
+                </Badge>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">N/A</p>
+          )}
         </div>
       </CardContent>
     </Card>
   );
 }
+

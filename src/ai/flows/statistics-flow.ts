@@ -6,7 +6,7 @@
  */
 
 import { ai } from '@/ai/genkit';
-import { z } from 'zod'; // Ensured zod is imported directly
+import { z } from 'zod'; 
 import type { LotteryResult } from '@/types/lottery';
 import {
   LotteryStatisticsInputSchema as InputSchema,
@@ -22,11 +22,19 @@ function getTopN(frequencies: Record<string, number>, n: number, ascending: bool
   
   if (sorted.length === 0) return [];
 
+  // If n is larger than available numbers, return all available sorted numbers
+  if (n >= sorted.length) {
+    return sorted.map(item => item.num);
+  }
+  
   const limit = Math.min(n, sorted.length);
   if (limit === 0) return [];
   
+  // Get the frequency of the Nth item
   const thresholdFreq = sorted[limit-1].freq;
   
+  // Return all items with frequency >= thresholdFreq (for most frequent)
+  // or <= thresholdFreq (for least frequent), then slice to N
   return sorted
     .filter(item => (ascending ? item.freq <= thresholdFreq : item.freq >= thresholdFreq))
     .map(item => item.num)
@@ -66,9 +74,13 @@ const internalCalculateLotteryStatisticsFlow = ai.defineFlow(
       result.gagnants.forEach(num => {
         winningFrequencies[num.toString()] = (winningFrequencies[num.toString()] || 0) + 1;
       });
-      result.machine.forEach(num => {
-        machineFrequencies[num.toString()] = (machineFrequencies[num.toString()] || 0) + 1;
-      });
+
+      // Handle optional machine numbers
+      if (result.machine && result.machine.length > 0) {
+        result.machine.forEach(num => {
+          machineFrequencies[num.toString()] = (machineFrequencies[num.toString()] || 0) + 1;
+        });
+      }
 
       const sortedGagnants = [...result.gagnants].sort((a, b) => a - b);
       for (let i = 0; i < sortedGagnants.length; i++) {
@@ -138,3 +150,4 @@ const internalCalculateLotteryStatisticsFlow = ai.defineFlow(
 export async function calculateLotteryStatistics(input: InputType): Promise<OutputType> {
   return internalCalculateLotteryStatisticsFlow(input);
 }
+

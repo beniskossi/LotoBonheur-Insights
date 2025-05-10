@@ -17,7 +17,9 @@ const NumberRegularityInputSchema = z.object({
       draw_name: z.string(),
       date: z.string(),
       gagnants: z.array(z.number()),
-      machine: z.array(z.number()),
+      machine: z.array(z.number()).refine(arr => arr.length === 0 || arr.length === 5, { // Allow empty or 5 machine numbers
+        message: "Les numéros machine doivent être soit 0 (aucun) soit 5 numéros.",
+      }),
     })
   ).describe("List of lottery results for a specific draw category."),
   targetNumber: z.number().describe("The number to analyze for regularity."),
@@ -130,3 +132,4 @@ const analyzeNumberRegularityFlow = ai.defineFlow(
 export async function analyzeNumberRegularity(input: NumberRegularityInput): Promise<NumberRegularityOutput> {
   return analyzeNumberRegularityFlow(input);
 }
+

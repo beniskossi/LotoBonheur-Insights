@@ -12,7 +12,9 @@ export const LotteryStatisticsInputSchema = z.object({
       draw_name: z.string(),
       date: z.string(),
       gagnants: z.array(z.number()),
-      machine: z.array(z.number()),
+      machine: z.array(z.number()).refine(arr => arr.length === 0 || arr.length === 5, {
+        message: "Les numéros machine doivent être soit 0 (aucun) soit 5 numéros.",
+      }),
     })
   ).describe("List of lottery results for a specific draw category."),
   drawName: z.string().describe("The name of the draw category being analyzed.")
@@ -23,11 +25,11 @@ export const LotteryStatisticsOutputSchema = z.object({
   drawName: z.string().describe("The name of the draw category analyzed."),
   totalDrawsAnalyzed: z.number().describe("Total number of draws analyzed for this category."),
   winningNumberFrequencies: NumberFrequencySchema.describe("Frequencies of winning numbers."),
-  machineNumberFrequencies: NumberFrequencySchema.describe("Frequencies of machine numbers."),
+  machineNumberFrequencies: NumberFrequencySchema.describe("Frequencies of machine numbers (can be empty if no machine draws)."),
   mostFrequentWinning: z.array(z.number()).describe("Most frequently appearing winning numbers (top 5)."),
   leastFrequentWinning: z.array(z.number()).describe("Least frequently appearing winning numbers (bottom 5)."),
-  mostFrequentMachine: z.array(z.number()).describe("Most frequently appearing machine numbers (top 5)."),
-  leastFrequentMachine: z.array(z.number()).describe("Least frequently appearing machine numbers (bottom 5)."),
+  mostFrequentMachine: z.array(z.number()).describe("Most frequently appearing machine numbers (top 5, can be empty)."),
+  leastFrequentMachine: z.array(z.number()).describe("Least frequently appearing machine numbers (bottom 5, can be empty)."),
   winningPairFrequencies: PairFrequenciesSchema.describe("Frequencies of pairs of winning numbers."),
   mostFrequentWinningPairs: z.array(z.string()).describe("Top 10 most frequent winning number pairs."),
   oddEvenWinningStats: z.object({
@@ -43,3 +45,4 @@ export const LotteryStatisticsOutputSchema = z.object({
   }).describe("Statistics on the sum of winning numbers."),
 });
 export type LotteryStatisticsOutput = z.infer<typeof LotteryStatisticsOutputSchema>;
+

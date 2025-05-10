@@ -21,7 +21,7 @@ import { getUniqueDrawNames } from "@/config/draw-schedule";
 import { format, parseISO, isValid, parse as dateParse } from 'date-fns';
 
 type LotteryResultWithId = LotteryResult & { clientId: string };
-const ADMIN_DATA_STORAGE_KEY = 'lotoBonheurInsightsAdminData';
+const ADMIN_DATA_STORAGE_KEY = 'lotocrackAdminData'; // Updated app name
 
 const lotteryResultSchema = z.object({
   draw_name: z.string().min(1, "Le nom du tirage est requis."),
@@ -34,7 +34,10 @@ const lotteryResultSchema = z.object({
     }
   }, { message: "Date invalide. Format YYYY-MM-DD attendu." }),
   gagnants: z.array(z.number().min(1, "Numéro trop petit.").max(90, "Numéro trop grand.")).length(5, "5 numéros gagnants requis."),
-  machine: z.array(z.number().min(1, "Numéro trop petit.").max(90, "Numéro trop grand.")).length(5, "5 numéros machine requis."),
+  machine: z.array(z.number().min(1, "Numéro trop petit.").max(90, "Numéro trop grand."))
+    .refine(arr => arr.length === 0 || arr.length === 5, {
+      message: "Les numéros machine doivent être soit 0 (aucun) soit 5 numéros.",
+    }),
 });
 type LotteryFormValues = z.infer<typeof lotteryResultSchema>;
 
@@ -106,6 +109,8 @@ export default function AdminPage() {
   const [importFilterDrawName, setImportFilterDrawName] = useState<string>("all");
   const [exportFilterDrawName, setExportFilterDrawName] = useState<string>("all");
 
+  const { close: closeSheet } = useSidebar(); // Get closeSheet from context
+
   const drawNames = getUniqueDrawNames();
 
   const { register, handleSubmit, control, reset, formState: { errors } } = useForm<LotteryFormValues>({
@@ -114,7 +119,7 @@ export default function AdminPage() {
       draw_name: drawNames.length > 0 ? drawNames[0] : "",
       date: format(new Date(), 'yyyy-MM-dd'),
       gagnants: [],
-      machine: []
+      machine: [] // Default to empty array for machine numbers
     }
   });
   
@@ -124,9 +129,11 @@ export default function AdminPage() {
     try {
       const storedData = localStorage.getItem(ADMIN_DATA_STORAGE_KEY);
       if (storedData) {
-        const parsedData = JSON.parse(storedData);
-        setAdminData(parsedData);
-        setInitialLoadMessage(`Données chargées depuis le stockage local (${parsedData.length} résultats).`);
+        const parsedData = JSON.parse(storedData) as LotteryResultWithId[];
+        // Ensure machine is always an array, even if it was stored as undefined/null
+        const normalizedData = parsedData.map(r => ({...r, machine: Array.isArray(r.machine) ? r.machine : []}));
+        setAdminData(normalizedData);
+        setInitialLoadMessage(`Données chargées depuis le stockage local (${normalizedData.length} résultats).`);
         setIsLoadingData(false);
         return;
       }
@@ -138,7 +145,11 @@ export default function AdminPage() {
       }
       const results: LotteryResult[] = await response.json();
       if (Array.isArray(results)) {
-        const dataWithClientIds = results.map(r => ({ ...r, clientId: r.clientId || `${r.draw_name}-${r.date}-${Math.random().toString(36).substr(2, 9)}` }));
+        const dataWithClientIds = results.map(r => ({ 
+            ...r, 
+            clientId: r.clientId || `${r.draw_name}-${r.date}-${Math.random().toString(36).substr(2, 9)}`,
+            machine: Array.isArray(r.machine) ? r.machine : [] // Ensure machine is an array
+        }));
         setAdminData(dataWithClientIds);
         localStorage.setItem(ADMIN_DATA_STORAGE_KEY, JSON.stringify(dataWithClientIds));
         setInitialLoadMessage(`${dataWithClientIds.length} résultats chargés depuis l'API et sauvegardés localement.`);
@@ -177,7 +188,11 @@ export default function AdminPage() {
     startImportTransition(async () => {
       const result = await importLotteryDataFromPdf(formData, importFilterDrawName === "all" ? null : importFilterDrawName);
       if (result.success && result.data) {
-        const newDataWithClientIds = result.data.map(r => ({ ...r, clientId: `${r.draw_name}-${r.date}-${Math.random().toString(36).substr(2, 9)}` }));
+        const newDataWithClientIds = result.data.map(r => ({ 
+            ...r, 
+            clientId: `${r.draw_name}-${r.date}-${Math.random().toString(36).substr(2, 9)}`,
+            machine: Array.isArray(r.machine) ? r.machine : [] // Ensure machine is an array
+        }));
         let addedCount = 0;
         let duplicatesPrevented = 0;
         setAdminData(prevData => {
@@ -221,7 +236,7 @@ export default function AdminPage() {
         const blob = new Blob([byteArray], { type: 'application/pdf' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = result.fileName || 'LotoBonheurInsights_export_admin.pdf';
+        link.download = result.fileName || 'Lotocrack_export_admin.pdf'; // Updated app name
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -240,9 +255,12 @@ export default function AdminPage() {
         toast({ title: "Erreur", description: "Un résultat pour ce tirage à cette date existe déjà.", variant: "destructive"});
         return;
       }
-      const actionResult = await addLotteryResultAction(data); 
+      const actionResult = await addLotteryResultAction({
+        ...data,
+        machine: data.machine.length > 0 ? data.machine : [], // Ensure machine is empty array if not provided
+      }); 
       if (actionResult.success && actionResult.result) {
-        setAdminData(prev => [...prev, { ...actionResult.result!, clientId: actionResult.result!.clientId || Date.now().toString() }].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+        setAdminData(prev => [...prev, { ...actionResult.result!, clientId: actionResult.result!.clientId || Date.now().toString(), machine: Array.isArray(actionResult.result!.machine) ? actionResult.result!.machine : [] }].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
         toast({ title: "Succès", description: actionResult.message });
         setIsAddDialogOpen(false);
         reset({ draw_name: drawNames.length > 0 ? drawNames[0] : "", date: format(new Date(), 'yyyy-MM-dd'), gagnants: [], machine: [] });
@@ -260,9 +278,12 @@ export default function AdminPage() {
         return;
     }
     startProcessingTransition(async () => {
-      const actionResult = await updateLotteryResultAction(editingResult.clientId, data); 
+      const actionResult = await updateLotteryResultAction(editingResult.clientId, {
+        ...data,
+        machine: data.machine.length > 0 ? data.machine : [], // Ensure machine is empty array if not provided
+      }); 
       if (actionResult.success && actionResult.result) {
-        setAdminData(prev => prev.map(r => r.clientId === editingResult.clientId ? { ...r, ...actionResult.result!, clientId: editingResult.clientId } : r).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+        setAdminData(prev => prev.map(r => r.clientId === editingResult.clientId ? { ...r, ...actionResult.result!, clientId: editingResult.clientId, machine: Array.isArray(actionResult.result!.machine) ? actionResult.result!.machine : [] } : r).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
         toast({ title: "Succès", description: actionResult.message });
         setIsEditDialogOpen(false);
         setEditingResult(null);
@@ -279,7 +300,7 @@ export default function AdminPage() {
       draw_name: resultToEdit.draw_name,
       date: resultToEdit.date, 
       gagnants: resultToEdit.gagnants.map(Number),
-      machine: resultToEdit.machine.map(Number)
+      machine: Array.isArray(resultToEdit.machine) ? resultToEdit.machine.map(Number) : []
     });
     setIsEditDialogOpen(true);
   };
@@ -334,7 +355,7 @@ export default function AdminPage() {
     <div className="space-y-8 p-4 md:p-6 lg:p-8">
       <Card>
         <CardHeader>
-          <CardTitle className="text-3xl font-bold">Interface d'Administration LotoBonheur Insights</CardTitle>
+          <CardTitle className="text-3xl font-bold">Interface d'Administration Lotocrack</CardTitle> {/* Updated app name */}
           <CardDescription>
             Gestion des données des tirages Loto Bonheur. Les modifications ici affectent les données stockées localement dans votre navigateur.
           </CardDescription>
@@ -448,7 +469,7 @@ export default function AdminPage() {
                         <TableCell>{format(parseISO(r.date), 'dd/MM/yyyy')}</TableCell>
                         <TableCell>{r.draw_name}</TableCell>
                         <TableCell>{r.gagnants.join(', ')}</TableCell>
-                        <TableCell>{r.machine.join(', ')}</TableCell>
+                        <TableCell>{r.machine && r.machine.length > 0 ? r.machine.join(', ') : 'N/A'}</TableCell>
                         <TableCell className="space-x-1 text-right">
                             <Button variant="outline" size="icon" onClick={() => openEditDialog(r)} aria-label={`Modifier le résultat du ${format(parseISO(r.date), 'dd/MM/yyyy')} pour ${r.draw_name}`}><Edit className="h-4 w-4" /></Button>
                             <Button variant="destructive" size="icon" onClick={() => handleDeleteClick(r.clientId!)} aria-label={`Supprimer le résultat du ${format(parseISO(r.date), 'dd/MM/yyyy')} pour ${r.draw_name}`}><Trash2 className="h-4 w-4" /></Button>
@@ -468,41 +489,41 @@ export default function AdminPage() {
         </CardFooter>
       </Card>
 
-      <Card>
-        <CardHeader><CardTitle>Réinitialiser les Données par Catégorie</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          <AlertDialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
-            <div className="flex flex-col sm:flex-row gap-4 items-end">
-                <div className="flex-grow">
-                    <Label htmlFor="resetCategorySelect">Catégorie à réinitialiser</Label>
-                    <Select value={categoryToReset} onValueChange={setCategoryToReset}>
-                        <SelectTrigger id="resetCategorySelect"><SelectValue placeholder="Sélectionner une catégorie" /></SelectTrigger>
-                        <SelectContent>
-                        {drawNames.map(name => <SelectItem key={`reset-${name}`} value={name}>{name}</SelectItem>)}
-                        </SelectContent>
-                    </Select>
-                </div>
-                <AlertDialogTrigger asChild>
-                    <Button variant="destructive" disabled={!categoryToReset || isProcessing} onClick={handleResetCategoryClick}>
-                          {isProcessing && categoryToReset ? <Loader2 className="animate-spin mr-2 h-4 w-4"/> : <Trash2 className="mr-2 h-4 w-4" />} Réinitialiser la Catégorie
-                    </Button>
-                </AlertDialogTrigger>
-            </div>
-            <AlertDialogContent>
-                <AlertDialogHeader><AlertDialogTitle>Confirmer la Réinitialisation</AlertDialogTitle></AlertDialogHeader>
-                <AlertDialogDescription>
-                Êtes-vous sûr de vouloir supprimer TOUS les résultats pour la catégorie "{categoryToReset}" ? Cette action est irréversible.
-                </AlertDialogDescription>
-                <AlertDialogFooter>
-                <AlertDialogCancel onClick={() => { setIsResetDialogOpen(false); } }>Annuler</AlertDialogCancel>
-                <AlertDialogAction onClick={confirmResetCategory} disabled={isProcessing} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
-                    {isProcessing ? <Loader2 className="animate-spin"/> : "Réinitialiser"}
-                </AlertDialogAction>
-                </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </CardContent>
-      </Card>
+      <AlertDialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
+        <Card>
+          <CardHeader><CardTitle>Réinitialiser les Données par Catégorie</CardTitle></CardHeader>
+          <CardContent className="space-y-4">
+              <div className="flex flex-col sm:flex-row gap-4 items-end">
+                  <div className="flex-grow">
+                      <Label htmlFor="resetCategorySelect">Catégorie à réinitialiser</Label>
+                      <Select value={categoryToReset} onValueChange={setCategoryToReset}>
+                          <SelectTrigger id="resetCategorySelect"><SelectValue placeholder="Sélectionner une catégorie" /></SelectTrigger>
+                          <SelectContent>
+                          {drawNames.map(name => <SelectItem key={`reset-${name}`} value={name}>{name}</SelectItem>)}
+                          </SelectContent>
+                      </Select>
+                  </div>
+                  <AlertDialogTrigger asChild>
+                      <Button variant="destructive" disabled={!categoryToReset || isProcessing} onClick={handleResetCategoryClick}>
+                            {isProcessing && categoryToReset ? <Loader2 className="animate-spin mr-2 h-4 w-4"/> : <Trash2 className="mr-2 h-4 w-4" />} Réinitialiser la Catégorie
+                      </Button>
+                  </AlertDialogTrigger>
+              </div>
+          </CardContent>
+        </Card>
+        <AlertDialogContent>
+            <AlertDialogHeader><AlertDialogTitle>Confirmer la Réinitialisation</AlertDialogTitle></AlertDialogHeader>
+            <AlertDialogDescription>
+            Êtes-vous sûr de vouloir supprimer TOUS les résultats pour la catégorie "{categoryToReset}" ? Cette action est irréversible.
+            </AlertDialogDescription>
+            <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { setIsResetDialogOpen(false); } }>Annuler</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmResetCategory} disabled={isProcessing} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
+                {isProcessing ? <Loader2 className="animate-spin"/> : "Réinitialiser"}
+            </AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Add Result Dialog */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
@@ -546,14 +567,14 @@ export default function AdminPage() {
               {errors.gagnants?.message && <p className="text-destructive text-sm">{errors.gagnants.message}</p>}
             </div>
              <div>
-              <Label htmlFor="add_machine">Numéros Machine (séparés par virgule/espace)</Label>
+              <Label htmlFor="add_machine">Numéros Machine (Optionnel: 0 ou 5 numéros)</Label>
                <Controller
                 name="machine"
                 control={control}
                 render={({ field }) => (
                   <NumberArrayInput
                     id="add_machine"
-                    placeholder="6,7,8,9,10"
+                    placeholder="Optionnel: 6,7,8,9,10 ou laisser vide"
                     value={field.value}
                     onChange={field.onChange}
                     onBlur={field.onBlur}
@@ -613,14 +634,14 @@ export default function AdminPage() {
                 {errors.gagnants?.message && <p className="text-destructive text-sm">{errors.gagnants.message}</p>}
               </div>
               <div>
-                <Label htmlFor="edit_machine">Numéros Machine (séparés par virgule/espace)</Label>
+                <Label htmlFor="edit_machine">Numéros Machine (Optionnel: 0 ou 5 numéros)</Label>
                 <Controller
                     name="machine"
                     control={control}
                     render={({ field }) => (
                       <NumberArrayInput
                         id="edit_machine"
-                        placeholder="6,7,8,9,10"
+                        placeholder="Optionnel: 6,7,8,9,10 ou laisser vide"
                         value={field.value}
                         onChange={field.onChange}
                         onBlur={field.onBlur}
@@ -655,3 +676,4 @@ export default function AdminPage() {
     </div>
   );
 }
+
