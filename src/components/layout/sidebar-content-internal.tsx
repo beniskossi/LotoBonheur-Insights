@@ -3,7 +3,7 @@
 import type { LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react'; 
+import { useEffect, useState, useCallback } from 'react'; 
 import { BarChart3, Home, Layers, Lightbulb, ShieldCheck, Settings, CalendarDays, FileText } from 'lucide-react';
 
 import { DRAW_SCHEDULE, slugifyDrawName } from '@/config/draw-schedule'; 
@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import InstallPwaButton from '@/components/install-pwa-button';
+import { useSidebar } from '@/components/ui/sidebar'; // Import useSidebar
 
 interface NavItem {
   href: string;
@@ -52,6 +53,13 @@ export default function SidebarContentInternal() {
   const pathname = usePathname();
   const [defaultOpenDays, setDefaultOpenDays] = useState<string[]>([]);
   const [defaultOpenDraws, setDefaultOpenDraws] = useState<string[]>([]);
+  const { isMobile, setOpenMobile } = useSidebar(); // Get setOpenMobile and isMobile
+
+  const handleLinkClick = useCallback(() => {
+    if (isMobile) {
+      setOpenMobile(false);
+    }
+  }, [isMobile, setOpenMobile]);
 
   useEffect(() => {
     const activeDaySlugsSet = new Set<string>();
@@ -113,6 +121,7 @@ export default function SidebarContentInternal() {
               variant={isLinkActive(item.href, item.matchExact) ? 'secondary' : 'ghost'}
               className="justify-start"
               asChild
+              onClick={handleLinkClick} // Close sheet on click
             >
               <Link href={item.href}>
                 <item.icon className="mr-2 h-5 w-5" />
@@ -187,6 +196,7 @@ export default function SidebarContentInternal() {
                                       size="sm"
                                       className="justify-start"
                                       asChild
+                                      onClick={handleLinkClick} // Close sheet on click
                                     >
                                       <Link href={subHref}>
                                         <subItem.icon className="mr-2 h-4 w-4" />
@@ -211,6 +221,7 @@ export default function SidebarContentInternal() {
               variant={isLinkActive('/admin', true) ? 'secondary' : 'ghost'}
               className="justify-start mt-4"
               asChild
+              onClick={handleLinkClick} // Close sheet on click
             >
               <Link href="/admin">
                 <Settings className="mr-2 h-5 w-5" />
