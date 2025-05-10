@@ -82,8 +82,9 @@ export default function AdminPage() {
     try {
       const storedData = localStorage.getItem(ADMIN_DATA_STORAGE_KEY);
       if (storedData) {
-        setAdminData(JSON.parse(storedData));
-        setInitialLoadMessage(`Données chargées depuis le stockage local (${JSON.parse(storedData).length} résultats). Cliquez sur rafraîchir pour récupérer les données de l'API.`);
+        const parsedData = JSON.parse(storedData);
+        setAdminData(parsedData);
+        setInitialLoadMessage(`Données chargées depuis le stockage local (${parsedData.length} résultats).`);
         setIsLoadingData(false);
         return;
       }
@@ -91,7 +92,7 @@ export default function AdminPage() {
       const response = await fetch('/api/results'); 
       if (!response.ok) {
          const errorText = await response.text();
-        throw new Error(`Échec de la récupération des données initiales de l'API: ${response.status} ${errorText}`);
+        throw new Error(`Échec de la récupération des données initiales de l'API: ${response.status} ${errorText || response.statusText}`);
       }
       const results: LotteryResult[] = await response.json();
       if (Array.isArray(results)) {
@@ -135,12 +136,18 @@ export default function AdminPage() {
       const result = await importLotteryDataFromPdf(formData, importFilterDrawName === "all" ? null : importFilterDrawName);
       if (result.success && result.data) {
         const newDataWithClientIds = result.data.map(r => ({ ...r, clientId: `${r.draw_name}-${r.date}-${Math.random().toString(36).substr(2, 9)}` }));
+        let addedCount = 0;
         setAdminData(prevData => {
             const existingKeys = new Set(prevData.map(d => `${d.draw_name}-${d.date}`));
             const toAdd = newDataWithClientIds.filter(nd => !existingKeys.has(`${nd.draw_name}-${nd.date}`));
-            toast({ title: "Importation Réussie", description: result.message || `${toAdd.length} nouveaux résultats importés et ajoutés.` });
+            addedCount = toAdd.length;
             return [...prevData, ...toAdd].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
         });
+        let toastDescription = result.message || `Importation de ${result.originalCount} résultat(s) terminée.`;
+        toastDescription += ` ${result.importedCount || 0} résultat(s) correspondaient à votre filtre.`;
+        toastDescription += ` ${addedCount} nouveau(x) résultat(s) ont été ajouté(s) à vos données locales.`;
+        toast({ title: "Importation Réussie", description: toastDescription });
+
       } else {
         toast({ title: "Erreur d'Importation", description: result.error, variant: "destructive" });
       }
@@ -243,12 +250,12 @@ export default function AdminPage() {
     });
   };
 
-  const handleResetCategoryClick = (category: string) => {
-    if (!category) {
+  const handleResetCategoryClick = () => { // Removed category parameter
+    if (!categoryToReset) { // Use state `categoryToReset`
         toast({title: "Aucune catégorie", description: "Veuillez sélectionner une catégorie à réinitialiser.", variant: "destructive"});
         return;
     }
-    setCategoryToReset(category);
+    // setCategoryToReset(category); // No longer needed here, already in state
     setIsResetDialogOpen(true); 
   };
 
@@ -322,7 +329,7 @@ export default function AdminPage() {
                 <p className="text-xs text-muted-foreground mt-1">Si une catégorie est sélectionnée, seuls les résultats de cette catégorie seront importés depuis le PDF.</p>
             </div>
             <Button onClick={handleImportSubmit} disabled={isImporting || !selectedFile} className="w-full">
-              {isImporting ? <Loader2 className="animate-spin" /> : <UploadCloud />} Importer
+              {isImporting ? <Loader2 className="animate-spin mr-2" /> : <UploadCloud className="mr-2" />} Importer
             </Button>
           </CardContent>
         </Card>
@@ -341,7 +348,7 @@ export default function AdminPage() {
                  <p className="text-xs text-muted-foreground mt-1">Si une catégorie est sélectionnée, seuls les résultats de cette catégorie seront exportés.</p>
             </div>
             <Button onClick={handleExportSubmit} disabled={isExporting || adminData.length === 0} className="w-full">
-              {isExporting ? <Loader2 className="animate-spin" /> : <DownloadCloud />} Exporter
+              {isExporting ? <Loader2 className="animate-spin mr-2" /> : <DownloadCloud className="mr-2" />} Exporter
             </Button>
           </CardContent>
         </Card>
@@ -407,7 +414,7 @@ export default function AdminPage() {
         <CardFooter>
             <Button onClick={fetchAndInitializeAdminData} variant="outline" disabled={isLoadingData}>
                 <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingData ? 'animate-spin' : ''}`} />
-                Recharger les Données (Écrase les données locales actuelles)
+                Recharger les Données (Écrase les données locales si API prioritaire)
             </Button>
         </CardFooter>
       </Card>
@@ -427,7 +434,7 @@ export default function AdminPage() {
                 </div>
                  <AlertDialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
                     <AlertDialogTrigger asChild>
-                        <Button variant="destructive" disabled={!categoryToReset || isProcessing} onClick={() => setIsResetDialogOpen(true)}>
+                        <Button variant="destructive" disabled={!categoryToReset || isProcessing} onClick={handleResetCategoryClick}>
                              {isProcessing && categoryToReset ? <Loader2 className="animate-spin mr-2 h-4 w-4"/> : <Trash2 className="mr-2 h-4 w-4" />} Réinitialiser la Catégorie
                         </Button>
                     </AlertDialogTrigger>
@@ -567,3 +574,5 @@ export default function AdminPage() {
     </div>
   );
 }
+
+    

@@ -26,7 +26,7 @@ function findDrawTime(drawName: string): string | undefined {
 export async function importLotteryDataFromPdf(
   formData: FormData,
   filterDrawName?: string | null
-): Promise<{ success: boolean; data?: LotteryResult[]; error?: string; message?: string; importedCount?: number, filteredCount?: number, originalCount?: number }> {
+): Promise<{ success: boolean; data?: LotteryResult[]; error?: string; message?: string; importedCount?: number, originalCount?: number }> {
   const file = formData.get('pdfFile') as File;
 
   if (!file) {
@@ -47,8 +47,8 @@ export async function importLotteryDataFromPdf(
     let currentDrawName: string | null = null;
     const uniqueDrawNames = getUniqueDrawNames();
     
-    const drawNameTitlePattern = /TIRAGE DE (?:\d{1,2}H\d{1,2}\s+)?(.+)/i;
-    const dataLinePattern = /^(\d+)\s+([\d]{1,2}\s+[a-zA-Zûé]+\s+\d{4})\s+((?:\s*\d{1,2}){10,})/;
+    const drawNameTitlePattern = /TIRAGE DE (?:\d{1,2}H\d{0,2}\s+)?(.+)/i; // Adjusted to handle 10H as well as 10H00
+    const dataLinePattern = /^(\d+)\s+([\d]{1,2}\s+[a-zA-Zûüäâéèêëïîôöùç]+\s+\d{4})\s+((?:\s*\d{1,2}){10,})/;
 
 
     for (const line of lines) {
@@ -57,7 +57,12 @@ export async function importLotteryDataFromPdf(
 
       if (drawNameMatch && drawNameMatch[1]) {
         const parsedDrawNameFromTitle = drawNameMatch[1].trim();
+        // Attempt to match parsedDrawNameFromTitle with known uniqueDrawNames
         currentDrawName = uniqueDrawNames.find(dn => dn.toUpperCase() === parsedDrawNameFromTitle.toUpperCase()) || null;
+        if (!currentDrawName) {
+            // Fallback: if direct match fails, try partial match for names like "MONDAY SPECIAL" in "TIRAGE DE MONDAY SPECIAL"
+            currentDrawName = uniqueDrawNames.find(dn => parsedDrawNameFromTitle.includes(dn.toUpperCase())) || null;
+        }
         continue; 
       }
       
@@ -69,9 +74,11 @@ export async function importLotteryDataFromPdf(
         
         let parsedDate: Date;
         try {
+          // Try parsing with full month name first
           parsedDate = dateParse(dateStr, "d MMMM yyyy", new Date(), { locale: fr });
           if (isNaN(parsedDate.getTime())) {
-            parsedDate = dateParse(dateStr, "dd/MM/yyyy", new Date());
+            // Fallback to dd/MM/yyyy if full month name parsing fails or is not the format
+            parsedDate = dateParse(dateStr, "dd/MM/yyyy", new Date(), { locale: fr });
           }
         } catch (e) {
           console.warn("Could not parse date from PDF line:", dateStr, line, e);
@@ -86,7 +93,7 @@ export async function importLotteryDataFromPdf(
         
         const allNumbers = Array.from(numbersStr.matchAll(/(\d{1,2})/g)).map(m => parseInt(m[1]));
 
-        if (allNumbers.length >= 10) {
+        if (allNumbers.length >= 10) { // Expecting at least 5 gagnants and 5 machine
           const gagnants = allNumbers.slice(0, 5);
           const machine = allNumbers.slice(5, 10); 
           const isValidNumber = (n: number) => n >= 1 && n <= 90;
@@ -98,7 +105,11 @@ export async function importLotteryDataFromPdf(
               gagnants,
               machine,
             });
+          } else {
+             console.warn(`Invalid numbers in PDF line for ${currentDrawName} on ${formattedDate}: Gagnants: ${gagnants.join(',')}, Machine: ${machine.join(',')}`);
           }
+        } else {
+             console.warn(`Not enough numbers in PDF line for ${currentDrawName} on ${formattedDate}: Found ${allNumbers.length} numbers.`);
         }
       }
     }
@@ -110,23 +121,23 @@ export async function importLotteryDataFromPdf(
       filteredResults = allImportedResults.filter(r => r.draw_name === filterDrawName);
     }
     
-    const filteredCount = filteredResults.length;
+    const importedCount = filteredResults.length; // This is the count of items returned in `data`
 
     if (originalCount === 0 && lines.length > 0) {
-      return { success: false, error: 'Aucune donnée de tirage valide n\'a pu être extraite du PDF. Vérifiez le format du titre du tirage (ex: TIRAGE DE 10H00 REVEIL) et des lignes de données.' };
+      return { success: false, error: 'Aucune donnée de tirage valide n\'a pu être extraite du PDF. Vérifiez le format du titre du tirage (ex: TIRAGE DE 10H REVEIL ou TIRAGE DE MONDAY SPECIAL) et des lignes de données.' };
     }
     if (originalCount === 0 && lines.length === 0) {
       return { success: false, error: 'Le fichier PDF semble vide ou ne contient aucun texte extractible.' };
     }
 
-    let message = `${originalCount} résultats lus depuis le PDF.`;
+    let message = `${originalCount} résultat(s) lu(s) depuis le PDF.`;
     if (filterDrawName && filterDrawName !== "all") {
-      message += ` ${filteredCount} résultats correspondent au filtre "${filterDrawName}".`;
+      message += ` ${importedCount} résultat(s) correspondent au filtre "${filterDrawName}".`;
     } else {
-      message += ` ${filteredCount} résultats importés (aucun filtre appliqué ou "Toutes les catégories" sélectionné).`;
+      message += ` ${importedCount} résultat(s) sont prêts à être traités (aucun filtre appliqué ou "Toutes les catégories" sélectionné).`;
     }
 
-    return { success: true, data: filteredResults, importedCount: filteredCount, message, originalCount, filteredCount };
+    return { success: true, data: filteredResults, importedCount, message, originalCount };
 
   } catch (error: any) {
     console.error('Error parsing PDF for import:', error);
@@ -173,7 +184,7 @@ export async function exportLotteryDataToPdf(
 
       const drawTime = findDrawTime(drawName) || "";
       doc.setFontSize(16);
-      doc.text(`TIRAGE DE ${drawTime} ${drawName.toUpperCase()}`, doc.internal.pageSize.getWidth() / 2, 15, { align: 'center' });
+      doc.text(`TIRAGE DE ${drawTime ? drawTime + " " : ""}${drawName.toUpperCase()}`, doc.internal.pageSize.getWidth() / 2, 15, { align: 'center' });
       doc.setFontSize(10);
       doc.text(`Résultats des ${drawResults.length} derniers tirages`, doc.internal.pageSize.getWidth() / 2, 22, { align: 'center' });
 
@@ -181,12 +192,12 @@ export async function exportLotteryDataToPdf(
         [
           { content: 'Tirage N°', rowSpan: 2, styles: { valign: 'middle', halign: 'center', fontStyle: 'bold', fillColor: [230, 230, 230] } },
           { content: 'Date', rowSpan: 2, styles: { valign: 'middle', halign: 'center', fontStyle: 'bold', fillColor: [230, 230, 230] } },
-          { content: '5 PREMIERS CHIFFRES TIRES', colSpan: 5, styles: { halign: 'center', fontStyle: 'bold', fillColor: [200, 220, 255] } },
-          { content: '5 DERNIERS CHIFFRES TIRES', colSpan: 5, styles: { halign: 'center', fontStyle: 'bold', fillColor: [255, 220, 200] } }
+          { content: '5 PREMIERS CHIFFRES TIRÉS (GAGNANTS)', colSpan: 5, styles: { halign: 'center', fontStyle: 'bold', fillColor: [200, 220, 255] } },
+          { content: '5 DERNIERS CHIFFRES TIRÉS (MACHINE)', colSpan: 5, styles: { halign: 'center', fontStyle: 'bold', fillColor: [255, 220, 200] } }
         ],
-        [
-          '1er N° tiré', '2ème N° tiré', '3ème N° tiré', '4ème N° tiré', '5ème N° tiré',
-          '86ème N° tiré', '87ème N° tiré', '88ème N° tiré', '89ème N° tiré', '90ème N° tiré'
+        [ // Sub-headers for numbers
+          'N°1', 'N°2', 'N°3', 'N°4', 'N°5', // Gagnants
+          'N°1', 'N°2', 'N°3', 'N°4', 'N°5'  // Machine
         ]
       ];
       
@@ -206,11 +217,13 @@ export async function exportLotteryDataToPdf(
         startY: 30,
         theme: 'grid',
         headStyles: { fontStyle: 'bold', halign: 'center', fontSize: 8, cellPadding: 1.5 },
-        columnStyles: {
-          0: { halign: 'center', cellWidth: 15 }, 
-          1: { halign: 'left', cellWidth: 25 },   
-          2: { halign: 'center' }, 3: { halign: 'center' }, 4: { halign: 'center' }, 5: { halign: 'center' }, 6: { halign: 'center' },
-          7: { halign: 'center' }, 8: { halign: 'center' }, 9: { halign: 'center' }, 10: { halign: 'center' }, 11: { halign: 'center' },
+        columnStyles: { // Adjust column widths as needed
+          0: { halign: 'center', cellWidth: 15 }, // Tirage N°
+          1: { halign: 'left', cellWidth: 25 },   // Date
+          // Gagnants
+          2: { halign: 'center', cellWidth: 'auto' }, 3: { halign: 'center', cellWidth: 'auto' }, 4: { halign: 'center', cellWidth: 'auto' }, 5: { halign: 'center', cellWidth: 'auto' }, 6: { halign: 'center', cellWidth: 'auto' },
+          // Machine
+          7: { halign: 'center', cellWidth: 'auto' }, 8: { halign: 'center', cellWidth: 'auto' }, 9: { halign: 'center', cellWidth: 'auto' }, 10: { halign: 'center', cellWidth: 'auto' }, 11: { halign: 'center', cellWidth: 'auto' },
         },
         styles: { fontSize: 8, cellPadding: 1.5, overflow: 'linebreak' },
         didDrawPage: (data) => {
@@ -252,3 +265,5 @@ export async function deleteLotteryResultAction(clientId: string): Promise<{ suc
 export async function resetCategoryDataAction(category: string): Promise<{ success: boolean; error?: string; message?: string }> {
   return { success: true, message: `Données pour la catégorie ${category} réinitialisées (simulation).` };
 }
+
+    
