@@ -19,9 +19,10 @@ import { useToast } from "@/hooks/use-toast";
 import { importLotteryDataFromPdf, exportLotteryDataToPdf, addLotteryResultAction, updateLotteryResultAction, deleteLotteryResultAction, resetCategoryDataAction } from "./actions";
 import { getUniqueDrawNames } from "@/config/draw-schedule";
 import { format, parseISO, isValid, parse as dateParse } from 'date-fns';
+import { useSidebar } from '@/components/ui/sidebar'; // Import useSidebar
 
 type LotteryResultWithId = LotteryResult & { clientId: string };
-const ADMIN_DATA_STORAGE_KEY = 'lotocrackAdminData'; // Updated app name
+const ADMIN_DATA_STORAGE_KEY = 'lotoBonheurInsightsAdminData';
 
 const lotteryResultSchema = z.object({
   draw_name: z.string().min(1, "Le nom du tirage est requis."),
@@ -37,13 +38,13 @@ const lotteryResultSchema = z.object({
   machine: z.array(z.number().min(1, "Numéro trop petit.").max(90, "Numéro trop grand."))
     .refine(arr => arr.length === 0 || arr.length === 5, {
       message: "Les numéros machine doivent être soit 0 (aucun) soit 5 numéros.",
-    }),
+    }).optional(), // Made machine optional
 });
 type LotteryFormValues = z.infer<typeof lotteryResultSchema>;
 
 // Helper component for number array input
 interface NumberArrayInputProps {
-  value: number[];
+  value: number[] | undefined; // Allow undefined for optional fields
   onChange: (numbers: number[]) => void;
   onBlur: () => void;
   id: string;
@@ -64,10 +65,12 @@ const NumberArrayInput: React.FC<NumberArrayInputProps> = ({ value: rhfValue, on
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInputValue(e.target.value);
+    // Parse and call onChange immediately for better UX
+    rhfOnChange(parseNumbersString(e.target.value));
   };
 
   const handleInputBlur = () => {
-    rhfOnChange(parseNumbersString(inputValue));
+    // rhfOnChange is already called in handleInputChange, so only onBlur is needed here
     rhfOnBlur();
   };
 
@@ -103,13 +106,13 @@ export default function AdminPage() {
   const [isConfirmDeleteDialogOpen, setIsConfirmDeleteDialogOpen] = useState(false);
   const [deletingResultClientId, setDeletingResultClientId] = useState<string | null>(null);
 
-  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
+  const [isResetCategoryDialogOpen, setIsResetCategoryDialogOpen] = useState(false);
   const [categoryToReset, setCategoryToReset] = useState<string>("");
 
   const [importFilterDrawName, setImportFilterDrawName] = useState<string>("all");
   const [exportFilterDrawName, setExportFilterDrawName] = useState<string>("all");
 
-  const { close: closeSheet } = useSidebar(); // Get closeSheet from context
+  const { setOpenMobile: closeSheet } = useSidebar(); // Get closeSheet from context
 
   const drawNames = getUniqueDrawNames();
 
@@ -119,7 +122,7 @@ export default function AdminPage() {
       draw_name: drawNames.length > 0 ? drawNames[0] : "",
       date: format(new Date(), 'yyyy-MM-dd'),
       gagnants: [],
-      machine: [] // Default to empty array for machine numbers
+      machine: [] 
     }
   });
   
@@ -130,7 +133,6 @@ export default function AdminPage() {
       const storedData = localStorage.getItem(ADMIN_DATA_STORAGE_KEY);
       if (storedData) {
         const parsedData = JSON.parse(storedData) as LotteryResultWithId[];
-        // Ensure machine is always an array, even if it was stored as undefined/null
         const normalizedData = parsedData.map(r => ({...r, machine: Array.isArray(r.machine) ? r.machine : []}));
         setAdminData(normalizedData);
         setInitialLoadMessage(`Données chargées depuis le stockage local (${normalizedData.length} résultats).`);
@@ -148,7 +150,7 @@ export default function AdminPage() {
         const dataWithClientIds = results.map(r => ({ 
             ...r, 
             clientId: r.clientId || `${r.draw_name}-${r.date}-${Math.random().toString(36).substr(2, 9)}`,
-            machine: Array.isArray(r.machine) ? r.machine : [] // Ensure machine is an array
+            machine: Array.isArray(r.machine) ? r.machine : [] 
         }));
         setAdminData(dataWithClientIds);
         localStorage.setItem(ADMIN_DATA_STORAGE_KEY, JSON.stringify(dataWithClientIds));
@@ -191,7 +193,7 @@ export default function AdminPage() {
         const newDataWithClientIds = result.data.map(r => ({ 
             ...r, 
             clientId: `${r.draw_name}-${r.date}-${Math.random().toString(36).substr(2, 9)}`,
-            machine: Array.isArray(r.machine) ? r.machine : [] // Ensure machine is an array
+            machine: Array.isArray(r.machine) ? r.machine : [] 
         }));
         let addedCount = 0;
         let duplicatesPrevented = 0;
@@ -201,7 +203,7 @@ export default function AdminPage() {
             newDataWithClientIds.forEach(nd => {
                 if (!existingKeys.has(`${nd.draw_name}-${nd.date}`)) {
                     toAdd.push(nd);
-                    existingKeys.add(`${nd.draw_name}-${nd.date}`); // Add to set to prevent duplicates from within the same import batch
+                    existingKeys.add(`${nd.draw_name}-${nd.date}`); 
                 } else {
                     duplicatesPrevented++;
                 }
@@ -236,7 +238,7 @@ export default function AdminPage() {
         const blob = new Blob([byteArray], { type: 'application/pdf' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = result.fileName || 'Lotocrack_export_admin.pdf'; // Updated app name
+        link.download = result.fileName || 'LotoBonheur_Insights_export_admin.pdf'; 
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -257,7 +259,7 @@ export default function AdminPage() {
       }
       const actionResult = await addLotteryResultAction({
         ...data,
-        machine: data.machine.length > 0 ? data.machine : [], // Ensure machine is empty array if not provided
+        machine: data.machine ? data.machine : [], 
       }); 
       if (actionResult.success && actionResult.result) {
         setAdminData(prev => [...prev, { ...actionResult.result!, clientId: actionResult.result!.clientId || Date.now().toString(), machine: Array.isArray(actionResult.result!.machine) ? actionResult.result!.machine : [] }].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
@@ -280,7 +282,7 @@ export default function AdminPage() {
     startProcessingTransition(async () => {
       const actionResult = await updateLotteryResultAction(editingResult.clientId, {
         ...data,
-        machine: data.machine.length > 0 ? data.machine : [], // Ensure machine is empty array if not provided
+        machine: data.machine ? data.machine : [], 
       }); 
       if (actionResult.success && actionResult.result) {
         setAdminData(prev => prev.map(r => r.clientId === editingResult.clientId ? { ...r, ...actionResult.result!, clientId: editingResult.clientId, machine: Array.isArray(actionResult.result!.machine) ? actionResult.result!.machine : [] } : r).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
@@ -330,7 +332,7 @@ export default function AdminPage() {
         toast({title: "Aucune catégorie", description: "Veuillez sélectionner une catégorie à réinitialiser.", variant: "destructive"});
         return;
     }
-    setIsResetDialogOpen(true); 
+    setIsResetCategoryDialogOpen(true); 
   };
 
   const confirmResetCategory = async () => {
@@ -343,7 +345,7 @@ export default function AdminPage() {
       } else {
         toast({ title: "Erreur", description: actionResult.error, variant: "destructive" });
       }
-      setIsResetDialogOpen(false);
+      setIsResetCategoryDialogOpen(false);
       setCategoryToReset("");
     });
   };
@@ -355,7 +357,7 @@ export default function AdminPage() {
     <div className="space-y-8 p-4 md:p-6 lg:p-8">
       <Card>
         <CardHeader>
-          <CardTitle className="text-3xl font-bold">Interface d'Administration Lotocrack</CardTitle> {/* Updated app name */}
+          <CardTitle className="text-3xl font-bold">Interface d'Administration LotoBonheur Insights</CardTitle> 
           <CardDescription>
             Gestion des données des tirages Loto Bonheur. Les modifications ici affectent les données stockées localement dans votre navigateur.
           </CardDescription>
@@ -489,7 +491,7 @@ export default function AdminPage() {
         </CardFooter>
       </Card>
 
-      <AlertDialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
+      <AlertDialog open={isResetCategoryDialogOpen} onOpenChange={setIsResetCategoryDialogOpen}>
         <Card>
           <CardHeader><CardTitle>Réinitialiser les Données par Catégorie</CardTitle></CardHeader>
           <CardContent className="space-y-4">
@@ -517,7 +519,7 @@ export default function AdminPage() {
             Êtes-vous sûr de vouloir supprimer TOUS les résultats pour la catégorie "{categoryToReset}" ? Cette action est irréversible.
             </AlertDialogDescription>
             <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => { setIsResetDialogOpen(false); } }>Annuler</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => { setIsResetCategoryDialogOpen(false); } }>Annuler</AlertDialogCancel>
             <AlertDialogAction onClick={confirmResetCategory} disabled={isProcessing} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
                 {isProcessing ? <Loader2 className="animate-spin"/> : "Réinitialiser"}
             </AlertDialogAction>
@@ -676,4 +678,3 @@ export default function AdminPage() {
     </div>
   );
 }
-
