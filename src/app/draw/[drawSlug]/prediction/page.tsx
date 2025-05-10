@@ -3,22 +3,58 @@
 import type { LotteryResult } from '@/types/lottery';
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
-import { generateLotteryPrediction, type LotteryPredictionOutput } from '@/ai/flows/prediction-flow';
+import { generateLotteryPrediction, type LotteryPredictionOutput, type SinglePrediction } from '@/ai/flows/prediction-flow';
 import { getDrawNameBySlug } from '@/config/draw-schedule';
 import LoadingSpinner from '@/components/loading-spinner';
 import ErrorMessage from '@/components/error-message';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Lightbulb, ShieldCheck, Wand2, Info } from "lucide-react";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Lightbulb, ShieldCheck, Wand2, Info, Brain, CheckCircle, BarChartHorizontalBig } from "lucide-react";
+
+function PredictionCard({ prediction, isRecommended = false }: { prediction: SinglePrediction, isRecommended?: boolean }) {
+  return (
+    <Card className={`shadow-lg ${isRecommended ? 'border-primary ring-2 ring-primary' : ''}`}>
+      <CardHeader>
+        <CardTitle className="text-xl flex items-center">
+          {isRecommended ? <CheckCircle className="h-6 w-6 mr-2 text-primary" /> : <Brain className="h-6 w-6 mr-2 text-muted-foreground" />}
+          {prediction.methodName}
+        </CardTitle>
+        <CardDescription>Confiance: <Badge variant={
+            prediction.confidence === "Élevée" ? "default" : 
+            prediction.confidence === "Moyenne" ? "secondary" :
+            prediction.confidence === "Faible" ? "outline" :
+            "destructive" // Très faible
+          } className="text-sm">{prediction.confidence}</Badge>
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div>
+          <h4 className="text-md font-semibold text-muted-foreground mb-2">Numéros Suggérés:</h4>
+          <div className="flex flex-wrap gap-2 justify-center">
+            {prediction.predictedNumbers.map((num, index) => (
+              <Badge key={`${prediction.methodName}-num-${index}`} 
+                     className={`text-xl px-3 py-1 rounded-md shadow-sm ${isRecommended ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground'}`}>
+                {num}
+              </Badge>
+            ))}
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground italic pt-2">{prediction.explanation}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
 
 export default function PredictionPage() {
   const params = useParams();
   const drawSlug = params.drawSlug as string;
 
   const [allResults, setAllResults] = useState<LotteryResult[]>([]);
-  const [prediction, setPrediction] = useState<LotteryPredictionOutput | null>(null);
+  const [predictionOutput, setPredictionOutput] = useState<LotteryPredictionOutput | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [isLoadingPrediction, setIsLoadingPrediction] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,25 +90,23 @@ export default function PredictionPage() {
   }, [fetchResults]);
 
   const handleGeneratePrediction = useCallback(async () => {
-    if (allResults.length === 0 && !drawName) {
-        setError("Les données historiques sont nécessaires pour la prédiction et le nom du tirage n'est pas défini.");
-        return;
-    }
-     if (!drawName) {
+    if (!drawName) {
         setError("Le nom du tirage n'est pas défini. Impossible de générer une prédiction.");
         return;
     }
 
     setError(null);
     setIsLoadingPrediction(true);
-    setPrediction(null);
+    setPredictionOutput(null);
 
+    // The generateLotteryPrediction flow can handle empty `results` by generating random ones.
+    // It already filters by drawName internally if results are passed.
+    // For consistency with flow input, we pass all results for the category.
     const filteredResults = allResults.filter(result => result.draw_name === drawName);
-    // Prediction flow can handle empty filteredResults (will generate random)
-
+    
     try {
       const predOutput = await generateLotteryPrediction({ results: filteredResults, drawName });
-      setPrediction(predOutput);
+      setPredictionOutput(predOutput);
     } catch (err: any) {
       setError(`Erreur lors de la génération de la prédiction: ${err.message}`);
       console.error(err);
@@ -82,14 +116,11 @@ export default function PredictionPage() {
 
   }, [allResults, drawName]);
   
-   // Automatically generate prediction when data and drawName are ready
   useEffect(() => {
-    if (!isLoadingData && drawName && allResults.length > 0 && !prediction && !isLoadingPrediction && !error) {
-       // Only call if results are available for *any* draw to avoid issues if API fails entirely
-       // The flow itself will handle if `filteredResults` for `drawName` is empty.
+    if (!isLoadingData && drawName && !predictionOutput && !isLoadingPrediction && !error) {
        handleGeneratePrediction();
     }
-  }, [isLoadingData, drawName, allResults, prediction, isLoadingPrediction, error, handleGeneratePrediction]);
+  }, [isLoadingData, drawName, allResults, predictionOutput, isLoadingPrediction, error, handleGeneratePrediction]);
 
 
   if (!drawName && !isLoadingData) {
@@ -97,78 +128,83 @@ export default function PredictionPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <header>
-        <h1 className="text-3xl font-bold text-primary mb-1">Prédictions IA: {drawName || 'Chargement...'}</h1>
-        <p className="text-lg text-muted-foreground">Obtenez des suggestions de numéros pour le prochain tirage.</p>
+        <h1 className="text-4xl font-bold text-primary mb-2">Prédictions IA Avancées</h1>
+        <p className="text-xl text-muted-foreground">Analyse multi-algorithmes pour: <span className="font-semibold text-accent">{drawName || 'Chargement...'}</span></p>
       </header>
 
       <Alert variant="default" className="border-accent bg-accent/10">
-        <Lightbulb className="h-4 w-4 text-accent" />
-        <AlertTitle className="text-accent">Avertissement Important</AlertTitle>
-        <AlertDescription>
-          Les prédictions sont générées par une IA à des fins de divertissement et d'analyse statistique.
+        <Lightbulb className="h-5 w-5 text-accent" />
+        <AlertTitle className="text-accent text-lg">Avertissement Important</AlertTitle>
+        <AlertDescription className="text-sm">
+          Les prédictions sont générées par des algorithmes statistiques à des fins de divertissement et d'analyse.
           Elles ne garantissent aucunement un gain. Jouez de manière responsable.
-          Le modèle actuel utilise une approche simplifiée ; un réseau neuronal plus avancé est en développement.
+          La fiabilité des prédictions dépend fortement de la quantité et de la qualité des données historiques.
         </AlertDescription>
       </Alert>
 
-      <div className="flex justify-center">
-        <Button onClick={handleGeneratePrediction} disabled={isLoadingData || isLoadingPrediction} size="lg">
-          <Wand2 className="mr-2 h-5 w-5" />
-          {prediction ? 'Générer une Nouvelle Prédiction' : 'Générer une Prédiction'}
+      <div className="flex justify-center my-6">
+        <Button onClick={handleGeneratePrediction} disabled={isLoadingData || isLoadingPrediction} size="lg" className="px-8 py-6 text-lg">
+          <Wand2 className="mr-3 h-6 w-6" />
+          {predictionOutput ? 'Rafraîchir les Prédictions' : 'Générer les Prédictions'}
         </Button>
       </div>
       
       {isLoadingData && <div className="pt-4"><LoadingSpinner /></div>}
       {error && <ErrorMessage message={error} />}
-
       {isLoadingPrediction && <div className="pt-4"><LoadingSpinner /></div>}
 
-      {prediction && !isLoadingPrediction && (
-        <Card className="shadow-xl">
-          <CardHeader className="text-center">
-            <CardTitle className="text-2xl flex items-center justify-center">
-              <ShieldCheck className="h-7 w-7 mr-2 text-primary" />
-              Prédiction pour {prediction.drawName}
-            </CardTitle>
-            {prediction.confidence && <CardDescription>Confiance: {prediction.confidence}</CardDescription>}
-          </CardHeader>
-          <CardContent className="space-y-6 text-center">
-            <div>
-              <h3 className="text-xl font-semibold text-muted-foreground mb-3">Numéros Gagnants Suggérés</h3>
-              <div className="flex flex-wrap gap-3 justify-center">
-                {prediction.predictedWinningNumbers.map((num, index) => (
-                  <Badge key={`pred-gagnant-${index}`} className="text-2xl px-4 py-2 bg-accent text-accent-foreground rounded-lg shadow-md">
-                    {num}
-                  </Badge>
+      {predictionOutput && !isLoadingPrediction && (
+        <div className="space-y-8">
+          <Card className="border-2 border-primary shadow-2xl">
+            <CardHeader className="text-center bg-primary/5">
+               <div className="flex items-center justify-center text-primary">
+                 <ShieldCheck className="h-8 w-8 mr-3" />
+                <CardTitle className="text-3xl">Prédiction Recommandée</CardTitle>
+               </div>
+              <CardDescription className="text-md">
+                Pour le tirage: <span className="font-bold">{predictionOutput.drawName}</span> | 
+                Basé sur {predictionOutput.dataSummary.totalDrawsAnalyzed} tirages analysés.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-6">
+              <PredictionCard prediction={predictionOutput.recommendedPrediction} isRecommended={true} />
+            </CardContent>
+             <CardFooter className="text-xs text-muted-foreground justify-center">
+                La prédiction recommandée combine les résultats de plusieurs méthodes d'analyse.
+            </CardFooter>
+          </Card>
+
+          <Accordion type="single" collapsible className="w-full">
+            <AccordionItem value="all-methods">
+              <AccordionTrigger className="text-2xl font-semibold hover:no-underline">
+                <BarChartHorizontalBig className="mr-3 h-6 w-6 text-muted-foreground" />
+                Détail des autres méthodes de prédiction
+              </AccordionTrigger>
+              <AccordionContent className="pt-4 space-y-6">
+                {predictionOutput.allPredictions
+                  .filter(p => p.methodName !== predictionOutput.recommendedPrediction.methodName) // Exclude recommended if it's also in allPredictions with same name
+                  .map((pred, index) => (
+                    <PredictionCard key={index} prediction={pred} />
                 ))}
-              </div>
-            </div>
-            <div>
-              <h3 className="text-xl font-semibold text-muted-foreground mb-3">Numéros Machine Suggérés</h3>
-              <div className="flex flex-wrap gap-3 justify-center">
-                {prediction.predictedMachineNumbers.map((num, index) => (
-                  <Badge key={`pred-machine-${index}`} variant="secondary" className="text-2xl px-4 py-2 rounded-lg shadow-md">
-                    {num}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-            {prediction.explanation && (
-              <p className="text-sm text-muted-foreground pt-4 italic max-w-md mx-auto">{prediction.explanation}</p>
-            )}
-          </CardContent>
-        </Card>
+                 {predictionOutput.allPredictions.filter(p => p.methodName !== predictionOutput.recommendedPrediction.methodName).length === 0 && (
+                    <p className="text-muted-foreground text-center py-4">La prédiction recommandée est la seule disponible pour ce tirage.</p>
+                )}
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+
+        </div>
       )}
       
-      {!isLoadingData && !isLoadingPrediction && !prediction && !error && drawName && allResults.length === 0 && (
+      {!isLoadingData && !isLoadingPrediction && !predictionOutput && !error && drawName && (
          <Alert>
             <Info className="h-4 w-4" />
-            <AlertTitle>Données de Base Manquantes</AlertTitle>
+            <AlertTitle>En attente de génération</AlertTitle>
             <AlertDescription>
-            Impossible de charger les données des résultats pour "{drawName}". La prédiction ne peut être effectuée sans ces données.
-            Veuillez vérifier la section 'Données' ou rafraîchir les résultats globaux.
+            Cliquez sur "Générer les Prédictions" pour démarrer l'analyse. 
+            Si aucune donnée historique n'est disponible pour "{drawName}", les prédictions seront aléatoires.
             </AlertDescription>
         </Alert>
       )}

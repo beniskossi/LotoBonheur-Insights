@@ -1,9 +1,8 @@
 'use server';
 /**
- * @fileOverview Flow for generating lottery predictions.
- * This is a simplified version and does not implement a neural network.
+ * @fileOverview Flow for generating advanced lottery predictions using multiple statistical methods.
  *
- * - generateLotteryPrediction - Generates a basic prediction.
+ * - generateLotteryPrediction - Generates predictions using various algorithms.
  * - LotteryPredictionInput - Input type for the flow.
  * - LotteryPredictionOutput - Output type for the flow.
  */
@@ -11,80 +10,290 @@
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
 import type { LotteryResult } from '@/types/lottery';
+import { format, parseISO, differenceInDays } from 'date-fns';
 
-const LotteryPredictionInputSchema = z.object({
+const NUMBERS_TO_PREDICT = 5;
+const MIN_NUMBER = 1;
+const MAX_NUMBER = 90;
+
+const SinglePredictionSchema = z.object({
+  methodName: z.string(),
+  predictedNumbers: z.array(z.number()).length(NUMBERS_TO_PREDICT).describe(`A set of ${NUMBERS_TO_PREDICT} predicted numbers.`),
+  explanation: z.string().describe("Explanation of how this prediction was generated."),
+  confidence: z.string().describe("Qualitative confidence: Très faible, Faible, Moyenne, Élevée."),
+});
+export type SinglePrediction = z.infer<typeof SinglePredictionSchema>;
+
+export const LotteryPredictionInputSchema = z.object({
   results: z.array(
     z.object({
       draw_name: z.string(),
-      date: z.string(),
+      date: z.string(), // YYYY-MM-DD
       gagnants: z.array(z.number()),
       machine: z.array(z.number()),
     })
-  ).min(1).describe("List of historical lottery results for a specific draw category. Minimum 1 result required."),
+  ).describe("List of historical lottery results for a specific draw category."),
   drawName: z.string().describe("The name of the draw category for which to predict."),
-  // Future: Add parameters for ML model if implemented
 });
 export type LotteryPredictionInput = z.infer<typeof LotteryPredictionInputSchema>;
 
-const LotteryPredictionOutputSchema = z.object({
+export const LotteryPredictionOutputSchema = z.object({
   drawName: z.string(),
-  predictedWinningNumbers: z.array(z.number()).length(5),
-  predictedMachineNumbers: z.array(z.number()).length(5),
-  confidence: z.string().optional().describe("Qualitative confidence level or method used."),
-  explanation: z.string().optional().describe("Brief explanation of the prediction method."),
+  allPredictions: z.array(SinglePredictionSchema).describe("List of predictions from various methods."),
+  recommendedPrediction: SinglePredictionSchema.describe("The overall recommended prediction, typically from a hybrid method."),
+  dataSummary: z.object({
+    totalDrawsAnalyzed: z.number(),
+    // dateRange: z.string().optional().describe("e.g., '2023-01-01 à 2024-01-01'"), // Can be added later
+  }),
 });
 export type LotteryPredictionOutput = z.infer<typeof LotteryPredictionOutputSchema>;
 
+// --- Helper Functions ---
 
-// Simple prediction logic:
-// - Calculate frequency of all numbers.
-// - Pick top N most frequent numbers.
-// - Randomly select from these or use a mix of frequent and less frequent.
-// This is a placeholder for a more complex ML model (Neural Network).
-function simplePredictionStrategy(historicalResults: LotteryResult[], count: number): number[] {
-  if (historicalResults.length === 0) {
-    // Fallback: generate random unique numbers if no history
-    const randomNumbers = new Set<number>();
-    while (randomNumbers.size < count) {
-      randomNumbers.add(Math.floor(Math.random() * 90) + 1);
+function generateRandomUniqueNumbers(count: number, min: number, max: number, existingNumbers: number[] = []): number[] {
+  const numbers = new Set<number>(existingNumbers);
+  while (numbers.size < count) {
+    const randomNum = Math.floor(Math.random() * (max - min + 1)) + min;
+    if (!numbers.has(randomNum)) {
+      numbers.add(randomNum);
     }
-    return Array.from(randomNumbers);
   }
+  return Array.from(numbers).slice(0, count).sort((a,b) => a - b);
+}
 
+function getConfidence(analyzedCount: number): string {
+  if (analyzedCount < 10) return "Très faible";
+  if (analyzedCount < 50) return "Faible";
+  if (analyzedCount < 200) return "Moyenne";
+  return "Élevée";
+}
+
+// --- Prediction Methods ---
+
+function predictByFrequency(results: LotteryResult[], count: number): SinglePrediction {
   const frequencies: Record<string, number> = {};
-  historicalResults.forEach(result => {
+  results.forEach(result => {
     result.gagnants.forEach(num => {
       frequencies[num.toString()] = (frequencies[num.toString()] || 0) + 1;
-    });
-     // Optionally include machine numbers in frequency for prediction
-    result.machine.forEach(num => {
-        frequencies[num.toString()] = (frequencies[num.toString()] || 0) + 0.5; // Weight machine numbers less
     });
   });
 
   const sortedNumbers = Object.entries(frequencies)
     .map(([num, freq]) => ({ num: parseInt(num), freq }))
     .sort((a, b) => b.freq - a.freq);
-  
-  // Pick a mix: top frequent, some medium, some less frequent, or purely random from top 20-30
-  const candidatePool = sortedNumbers.slice(0, Math.min(30, sortedNumbers.length)).map(item => item.num);
-  if (candidatePool.length < count) { // Ensure pool is large enough
-      for(let i = 1; i <= 90 && candidatePool.length < count; i++) {
-          if(!candidatePool.includes(i)) candidatePool.push(i);
-      }
+
+  let predictedNumbers: number[];
+  if (sortedNumbers.length < count) {
+    predictedNumbers = generateRandomUniqueNumbers(count, MIN_NUMBER, MAX_NUMBER, sortedNumbers.map(s => s.num));
+  } else {
+    // Mix of top frequent and some from a slightly larger pool to introduce variability
+    const topN = Math.min(sortedNumbers.length, Math.max(count * 2, 10));
+    const candidatePool = sortedNumbers.slice(0, topN).map(item => item.num);
+    predictedNumbers = generateRandomUniqueNumbers(count, MIN_NUMBER, MAX_NUMBER, []).map((_,idx) => { // Ensure 5 numbers
+        if (candidatePool.length > idx) return candidatePool[Math.floor(Math.random() * candidatePool.length)];
+        return generateRandomUniqueNumbers(1,MIN_NUMBER,MAX_NUMBER,predictedNumbers)[0] // fill if pool too small
+    });
+    // Ensure uniqueness and correct count again
+    predictedNumbers = generateRandomUniqueNumbers(count, MIN_NUMBER, MAX_NUMBER, predictedNumbers);
+
   }
 
-  const prediction = new Set<number>();
-  while (prediction.size < count && candidatePool.length > 0) {
-    const randomIndex = Math.floor(Math.random() * candidatePool.length);
-    prediction.add(candidatePool.splice(randomIndex, 1)[0]);
-  }
-  // If not enough unique numbers, fill randomly
-  while (prediction.size < count) {
-    prediction.add(Math.floor(Math.random() * 90) + 1);
-  }
-  return Array.from(prediction).sort((a,b) => a - b);
+  return {
+    methodName: "Fréquence",
+    predictedNumbers,
+    explanation: "Basé sur les numéros gagnants les plus fréquemment tirés dans l'historique.",
+    confidence: getConfidence(results.length),
+  };
 }
+
+function predictByDelay(results: LotteryResult[], count: number): SinglePrediction {
+  if (results.length === 0) {
+    return {
+      methodName: "Retards",
+      predictedNumbers: generateRandomUniqueNumbers(count, MIN_NUMBER, MAX_NUMBER),
+      explanation: "Généré aléatoirement en raison de l'absence de données historiques.",
+      confidence: "Très faible",
+    };
+  }
+  const lastSeen: Record<string, string> = {}; // Store date as YYYY-MM-DD
+  const allPossibleNumbers = Array.from({ length: MAX_NUMBER }, (_, i) => i + 1);
+
+  results.forEach(result => {
+    result.gagnants.forEach(num => {
+      if (!lastSeen[num.toString()] || result.date > lastSeen[num.toString()]) {
+        lastSeen[num.toString()] = result.date;
+      }
+    });
+  });
+  
+  const today = new Date();
+  const numberDelays = allPossibleNumbers.map(num => {
+    const lastDate = lastSeen[num.toString()];
+    // If a number was never seen, give it a very high delay, or handle as per strategy.
+    // For now, let's assume it was seen very long ago if not in 'lastSeen'.
+    // This implies it is "very delayed".
+    const delay = lastDate ? differenceInDays(today, parseISO(lastDate)) : MAX_NUMBER * 100; // Arbitrary large delay for unseen
+    return { num, delay };
+  }).sort((a, b) => b.delay - a.delay); // Sort by longest delay
+
+  const predictedNumbers = numberDelays.slice(0, count).map(item => item.num);
+  
+  return {
+    methodName: "Retards",
+    predictedNumbers: generateRandomUniqueNumbers(count, MIN_NUMBER, MAX_NUMBER, predictedNumbers), // Ensure 5 unique
+    explanation: "Basé sur les numéros qui ne sont pas apparus récemment (les plus 'en retard').",
+    confidence: getConfidence(results.length),
+  };
+}
+
+
+function predictByAssociation(results: LotteryResult[], count: number): SinglePrediction {
+   if (results.length < 5) { // Need some data for pair analysis
+    return {
+      methodName: "Associations",
+      predictedNumbers: generateRandomUniqueNumbers(count, MIN_NUMBER, MAX_NUMBER),
+      explanation: "Données historiques insuffisantes pour une analyse d'association. Généré aléatoirement.",
+      confidence: "Très faible",
+    };
+  }
+
+  const pairFrequencies: Record<string, number> = {};
+  results.forEach(result => {
+    const sortedGagnants = [...result.gagnants].sort((a, b) => a - b);
+    for (let i = 0; i < sortedGagnants.length; i++) {
+      for (let j = i + 1; j < sortedGagnants.length; j++) {
+        const pairKey = `${sortedGagnants[i]}-${sortedGagnants[j]}`;
+        pairFrequencies[pairKey] = (pairFrequencies[pairKey] || 0) + 1;
+      }
+    }
+  });
+
+  const topPairs = Object.entries(pairFrequencies)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 10) // Consider top 10 pairs
+    .map(([pairKey]) => pairKey.split('-').map(Number));
+
+  const associatedNumbersPool = new Set<number>();
+  topPairs.forEach(pair => {
+    associatedNumbersPool.add(pair[0]);
+    associatedNumbersPool.add(pair[1]);
+  });
+  
+  const predictedNumbers = generateRandomUniqueNumbers(count, MIN_NUMBER, MAX_NUMBER, Array.from(associatedNumbersPool));
+
+  return {
+    methodName: "Associations",
+    predictedNumbers,
+    explanation: "Basé sur les numéros qui apparaissent fréquemment ensemble en paires.",
+    confidence: getConfidence(results.length),
+  };
+}
+
+
+function predictByDistribution(results: LotteryResult[], count: number): SinglePrediction {
+  if (results.length === 0) {
+     return {
+      methodName: "Distribution",
+      predictedNumbers: generateRandomUniqueNumbers(count, MIN_NUMBER, MAX_NUMBER),
+      explanation: "Généré aléatoirement en raison de l'absence de données historiques.",
+      confidence: "Très faible",
+    };
+  }
+  const ranges = Array.from({ length: Math.ceil(MAX_NUMBER / 10) }, (_, i) => ({
+    min: i * 10 + 1,
+    max: (i + 1) * 10,
+    count: 0,
+  }));
+
+  results.forEach(result => {
+    result.gagnants.forEach(num => {
+      const rangeIndex = Math.floor((num - 1) / 10);
+      if (ranges[rangeIndex]) {
+        ranges[rangeIndex].count++;
+      }
+    });
+  });
+
+  // Calculate average numbers per range per draw
+  const avgNumbersPerRange = ranges.map(r => ({ ...r, avg: r.count / results.length }));
+  
+  // Try to pick numbers matching this distribution
+  // This is a simplified approach:
+  // Pick `count` numbers, trying to respect which ranges are more "popular"
+  const candidatePool: number[] = [];
+  avgNumbersPerRange.sort((a,b) => b.avg - a.avg); // Sort ranges by popularity
+
+  for (const range of avgNumbersPerRange) {
+      // Add numbers from this range, proportional to its average, up to count
+      const numToPickFromRange = Math.round(range.avg); // Simple rounding
+      for(let i=0; i < numToPickFromRange && candidatePool.length < count * 2; ++i){ // Pool size for randomness
+          candidatePool.push(Math.floor(Math.random() * (range.max - range.min + 1)) + range.min);
+      }
+  }
+  
+  const predictedNumbers = generateRandomUniqueNumbers(count, MIN_NUMBER, MAX_NUMBER, candidatePool);
+
+  return {
+    methodName: "Distribution",
+    predictedNumbers,
+    explanation: "Tente de correspondre à la distribution historique des numéros par plages (dizaines).",
+    confidence: getConfidence(results.length / 2), // Lower confidence for this method
+  };
+}
+
+function predictByHybrid(allMethodPredictions: SinglePrediction[], count: number): SinglePrediction {
+  const numberScores: Record<string, number> = {};
+  const confidenceWeights: Record<string, number> = { "Très faible": 0.5, "Faible": 1, "Moyenne": 1.5, "Élevée": 2 };
+
+  allMethodPredictions.forEach(prediction => {
+    const weight = confidenceWeights[prediction.confidence] || 1;
+    prediction.predictedNumbers.forEach(num => {
+      numberScores[num.toString()] = (numberScores[num.toString()] || 0) + weight;
+    });
+  });
+
+  const sortedNumbers = Object.entries(numberScores)
+    .map(([num, score]) => ({ num: parseInt(num), score }))
+    .sort((a, b) => b.score - a.score);
+
+  let predictedNumbers = sortedNumbers.slice(0, count).map(item => item.num);
+  if(predictedNumbers.length < count){
+      predictedNumbers = generateRandomUniqueNumbers(count, MIN_NUMBER, MAX_NUMBER, predictedNumbers);
+  }
+
+
+  // Calculate hybrid confidence (simplified)
+  let avgConfidenceScore = 0;
+  if (predictedNumbers.length > 0) {
+    predictedNumbers.forEach(num => {
+        allMethodPredictions.forEach(p => {
+            if(p.predictedNumbers.includes(num)) avgConfidenceScore += (confidenceWeights[p.confidence] || 1);
+        })
+    });
+    avgConfidenceScore = avgConfidenceScore / (predictedNumbers.length * allMethodPredictions.length);
+  }
+  
+  let hybridConfidence = "Faible";
+  if (avgConfidenceScore > 1.5) hybridConfidence = "Élevée";
+  else if (avgConfidenceScore > 1) hybridConfidence = "Moyenne";
+  else if (avgConfidenceScore > 0.5) hybridConfidence = "Faible";
+  else hybridConfidence = "Très faible";
+  
+  if (allMethodPredictions.length === 0 || allMethodPredictions.every(p => p.confidence === "Très faible")) {
+      hybridConfidence = "Très faible";
+  }
+
+
+  return {
+    methodName: "Hybride (Recommandé)",
+    predictedNumbers: predictedNumbers.sort((a,b)=>a-b),
+    explanation: "Combine les résultats de plusieurs méthodes, pondérés par leur confiance. Favorise les numéros consensuels.",
+    confidence: hybridConfidence,
+  };
+}
+
+
+// --- Main Flow ---
 
 const generateLotteryPredictionFlow = ai.defineFlow(
   {
@@ -92,34 +301,60 @@ const generateLotteryPredictionFlow = ai.defineFlow(
     inputSchema: LotteryPredictionInputSchema,
     outputSchema: LotteryPredictionOutputSchema,
   },
-  async (input) => {
+  async (input): Promise<LotteryPredictionOutput> => {
     const { results, drawName } = input;
 
-    // Placeholder: Uses simple strategy. A Neural Network model would be trained and invoked here.
-    const predictedGagnants = simplePredictionStrategy(results, 5);
-    const predictedMachine = simplePredictionStrategy(results, 5); 
+    const dataSummary = {
+      totalDrawsAnalyzed: results.length,
+    };
+
+    if (results.length === 0) {
+      const randomNumbers = generateRandomUniqueNumbers(NUMBERS_TO_PREDICT, MIN_NUMBER, MAX_NUMBER);
+      const randomPrediction: SinglePrediction = {
+        methodName: "Aléatoire (Manque de données)",
+        predictedNumbers: randomNumbers,
+        explanation: "Aucune donnée historique pour ce tirage. Généré aléatoirement.",
+        confidence: "Très faible",
+      };
+      return {
+        drawName,
+        allPredictions: [randomPrediction],
+        recommendedPrediction: randomPrediction,
+        dataSummary,
+      };
+    }
+    
+    // Gagnants only for these methods
+    const gagnantsResults = results.map(r => ({...r, gagnants: r.gagnants.slice(0, NUMBERS_TO_PREDICT)}));
+
+
+    const frequencyPrediction = predictByFrequency(gagnantsResults, NUMBERS_TO_PREDICT);
+    const delayPrediction = predictByDelay(gagnantsResults, NUMBERS_TO_PREDICT);
+    const associationPrediction = predictByAssociation(gagnantsResults, NUMBERS_TO_PREDICT);
+    const distributionPrediction = predictByDistribution(gagnantsResults, NUMBERS_TO_PREDICT);
+
+    const allPredictions: SinglePrediction[] = [
+      frequencyPrediction,
+      delayPrediction,
+      associationPrediction,
+      distributionPrediction,
+    ];
+
+    const hybridPrediction = predictByHybrid(allPredictions, NUMBERS_TO_PREDICT);
+    
+    // Insert hybrid as first in allPredictions for UI convenience if needed, or keep it separate
+    // For now, recommendedPrediction is the hybrid one.
+    allPredictions.push(hybridPrediction); // Add hybrid to the list as well
 
     return {
       drawName,
-      predictedWinningNumbers: predictedGagnants,
-      predictedMachineNumbers: predictedMachine,
-      confidence: "Faible (Basé sur une stratégie simplifiée de fréquence et de sélection aléatoire)",
-      explanation: "Cette prédiction est générée à partir des numéros historiquement fréquents et d'une part d'aléa. Elle ne constitue pas une garantie de gain et est fournie à titre indicatif. Un modèle d'apprentissage automatique de type réseau neuronal plus avancé est en cours de développement pour améliorer la précision.",
+      allPredictions: allPredictions.sort((a,b) => (a.methodName === "Hybride (Recommandé)" ? -1 : b.methodName === "Hybride (Recommandé)" ? 1 : 0)), // Hybrid first
+      recommendedPrediction: hybridPrediction,
+      dataSummary,
     };
   }
 );
 
 export async function generateLotteryPrediction(input: LotteryPredictionInput): Promise<LotteryPredictionOutput> {
-  if (input.results.length === 0) {
-    const randomWinning = simplePredictionStrategy([], 5);
-    const randomMachine = simplePredictionStrategy([], 5);
-    return {
-      drawName: input.drawName,
-      predictedWinningNumbers: randomWinning,
-      predictedMachineNumbers: randomMachine,
-      confidence: "Très faible (Généré aléatoirement faute de données historiques)",
-      explanation: "Aucune donnée historique n'est disponible pour ce tirage. Les numéros ont été générés de manière aléatoire. Un modèle d'apprentissage automatique de type réseau neuronal est prévu.",
-    };
-  }
   return generateLotteryPredictionFlow(input);
 }
