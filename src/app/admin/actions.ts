@@ -16,7 +16,6 @@ const LotteryResultSchemaForJson = z.object({
   draw_name: z.string().min(1),
   date: z.string().refine(val => {
     try {
-      // Attempt to parse with common date formats, ensure it's YYYY-MM-DD
       const parsed = dateParse(val, 'yyyy-MM-dd', new Date());
       return isValid(parsed) && format(parsed, 'yyyy-MM-dd') === val;
     } catch {
@@ -24,20 +23,18 @@ const LotteryResultSchemaForJson = z.object({
     }
   }, { message: "Invalid date format, expected YYYY-MM-DD" }),
   gagnants: z.array(z.number().int().min(1).max(90)).length(5),
-  machine: z.array(z.number().int().min(0).max(90)) // Allow 0 for items initially for validation
+  machine: z.array(z.number().int().min(0).max(90)) 
     .refine(arr => {
-        if (arr.length === 0) return true; // Empty array is fine
+        if (arr.length === 0) return true; 
         if (arr.length === 5) {
-            // If all are 0, it's fine (representing "no numbers" placeholder)
             if (arr.every(num => num === 0)) return true;
-            // Otherwise, all must be between 1 and 90 (actual lottery numbers)
             return arr.every(num => num >= 1 && num <= 90);
         }
-        return false; // Must be 0 or 5 numbers
+        return false; 
     }, {
         message: "Les numéros machine doivent être: un tableau vide, OU un tableau de 5 numéros (chacun entre 1 et 90), OU un tableau de cinq zéros pour indiquer l'absence de numéros machine.",
-    }),
-  clientId: z.string().optional(), // clientId is optional in the import file
+    }).optional(), // Make the machine field itself optional in the JSON
+  clientId: z.string().optional(), 
 });
 
 const LotteryResultsArraySchema = z.array(LotteryResultSchemaForJson);
@@ -70,15 +67,17 @@ export async function importLotteryDataFromJson(
     }
     
     const allImportedResults: LotteryResult[] = validationResult.data.map(item => {
+      // If item.machine is undefined (due to .optional()), default to empty array.
       let machineNumbers = Array.isArray(item.machine) ? item.machine : [];
       // Normalize [0,0,0,0,0] to [] if that's the convention for "no machine numbers"
       if (machineNumbers.length === 5 && machineNumbers.every(n => n === 0)) {
         machineNumbers = [];
       }
       return {
-        ...item,
+        draw_name: item.draw_name, // These are guaranteed by schema
+        date: item.date,
+        gagnants: item.gagnants,
         machine: machineNumbers, 
-        // clientId is optional in schema but required in LotteryResult type if not provided
         clientId: item.clientId || `${item.draw_name}-${item.date}-${Math.random().toString(36).substring(2, 9)}`
       };
     });
@@ -139,9 +138,12 @@ export async function exportLotteryDataToJson(
         return a.draw_name.localeCompare(b.draw_name);
     });
       
-    const jsonString = JSON.stringify(sortedResultsToExport.map(({clientId, ...rest}) => rest ), null, 2); // Remove clientId for export
+    const jsonString = JSON.stringify(sortedResultsToExport.map(({clientId, ...rest}) => ({
+      ...rest,
+      machine: Array.isArray(rest.machine) && rest.machine.length > 0 ? rest.machine : [] // Ensure exported machine is [] if empty/null
+    })), null, 2); // Remove clientId for export
     const currentDate = format(new Date(), 'yyyyMMdd_HHmmss');
-    const fileName = `LotoBonheurInsights_Export_Admin_${filterDrawName && filterDrawName !== "all" ? filterDrawName.replace(/\s+/g, '_') : 'Tous'}_${currentDate}.json`;
+    const fileName = `Lotocrack_Export_Admin_${filterDrawName && filterDrawName !== "all" ? filterDrawName.replace(/\s+/g, '_') : 'Tous'}_${currentDate}.json`;
 
     return { success: true, jsonData: jsonString, fileName };
 
@@ -154,6 +156,7 @@ export async function exportLotteryDataToJson(
 
 // Placeholder CRUD actions
 export async function addLotteryResultAction(resultData: Omit<LotteryResult, 'clientId'>): Promise<{ success: boolean; error?: string; message?: string, result?: LotteryResult }> {
+  // Normalize machine numbers: if [0,0,0,0,0] or undefined, treat as empty []
   let machineNumbers = Array.isArray(resultData.machine) ? resultData.machine : [];
   if (machineNumbers.length === 5 && machineNumbers.every(n => n === 0)) {
     machineNumbers = [];
@@ -167,32 +170,33 @@ export async function addLotteryResultAction(resultData: Omit<LotteryResult, 'cl
 }
 
 export async function updateLotteryResultAction(clientId: string, resultData: Partial<Omit<LotteryResult, 'clientId'>>): Promise<{ success: boolean; error?: string; message?: string, result?: LotteryResult }> {
-  let machineNumbers = Array.isArray(resultData.machine) ? resultData.machine : [];
-  if (resultData.machine && machineNumbers.length === 5 && machineNumbers.every(n => n === 0)) {
-    machineNumbers = [];
-  } else if (!resultData.machine) { // if machine is not part of partial update, keep existing
-      // This logic is tricky; ideally fetch existing result then merge.
-      // For simulation, we assume resultData provides the new machine state or undefined.
-      // If resultData.machine is undefined, it means 'machine' field was not part of the update.
-      // This simulated action doesn't have access to 'previous state' to merge.
-      // Let's assume if resultData.machine is part of the payload, it is the new state.
+  let machineNumbersToUpdate: number[] | undefined = undefined;
+
+  if (resultData.machine !== undefined) { // Only process if machine is part of the update
+    machineNumbersToUpdate = Array.isArray(resultData.machine) ? resultData.machine : [];
+    if (machineNumbersToUpdate.length === 5 && machineNumbersToUpdate.every(n => n === 0)) {
+      machineNumbersToUpdate = [];
+    }
   }
 
-  const updatedResult = { 
-      clientId, 
-      ...resultData,
-      machine: resultData.machine !== undefined ? machineNumbers : undefined, // only update if provided
-    } as LotteryResult; 
-
-  // Filter out undefined machine field if it was not part of the update.
-  // This is a bit hacky for simulation. A real DB update would handle partials better.
-  const finalResult: any = { clientId };
-  if(resultData.date) finalResult.date = resultData.date;
-  if(resultData.draw_name) finalResult.draw_name = resultData.draw_name;
-  if(resultData.gagnants) finalResult.gagnants = resultData.gagnants;
-  if(resultData.machine !== undefined) finalResult.machine = machineNumbers;
+  // Construct the final result for simulation, applying updates
+  // This is simplified; a real DB update would merge with existing data
+  const finalResultData: Partial<LotteryResult> = { ...resultData };
+  if (machineNumbersToUpdate !== undefined) {
+    finalResultData.machine = machineNumbersToUpdate;
+  }
   
-  return { success: true, message: "Résultat mis à jour avec succès (simulation).", result: finalResult as LotteryResult };
+  // Simulate the update by creating a result object that reflects the changes
+  const simulatedUpdatedResult: LotteryResult = {
+      clientId,
+      draw_name: resultData.draw_name || "", // Fallback for simulation
+      date: resultData.date || "", // Fallback for simulation
+      gagnants: resultData.gagnants || [], // Fallback for simulation
+      machine: machineNumbersToUpdate === undefined ? [] : machineNumbersToUpdate, // Default to [] if not updated
+      ...(resultData as Partial<LotteryResult>) // Apply other partial updates
+  };
+  
+  return { success: true, message: "Résultat mis à jour avec succès (simulation).", result: simulatedUpdatedResult };
 }
 
 export async function deleteLotteryResultAction(clientId: string): Promise<{ success: boolean; error?: string; message?: string }> {
@@ -238,6 +242,7 @@ export async function importLotteryDataFromPdf(
       const knownDrawName = getUniqueDrawNames().find(dn => line.toLowerCase().includes(dn.toLowerCase()));
       if (knownDrawName) {
         currentDrawName = knownDrawName;
+        // Try to extract date from the same line as draw name, assuming format like "DRAW NAME - DD Mois YYYY" or "DRAW NAME DD Mois YYYY"
         const dateMatch = line.match(/(\d{1,2})\s+(Janvier|Février|Mars|Avril|Mai|Juin|Juillet|Août|Septembre|Octobre|Novembre|Décembre)\s+(\d{4})/i);
         if (dateMatch) {
             try {
@@ -247,37 +252,54 @@ export async function importLotteryDataFromPdf(
                 const tempDate = dateParse(`${day} ${monthName} ${year}`, 'd MMMM yyyy', new Date(), { locale: fr });
                 if (isValid(tempDate)) {
                     currentDate = format(tempDate, 'yyyy-MM-dd');
+                } else {
+                    currentDate = null; // Reset if date parsing fails for a new draw name line
                 }
-            } catch (e) { console.warn("Could not parse date from line:", line); }
+            } catch (e) { 
+                console.warn("Could not parse date from draw name line:", line); 
+                currentDate = null;
+            }
+        } else {
+             currentDate = null; // If no date on this line, reset
         }
-        continue;
+        continue; // Move to next line after processing draw name and potentially date
       }
 
+
+      // If we have a draw name and date, look for Gagnants and Machine
       if (currentDrawName && currentDate) {
         if (line.toLowerCase().startsWith("gagnant:") || line.toLowerCase().startsWith("gagnants:")) {
           const gagnants = extractNumbers(line.substring(line.indexOf(':') + 1)).slice(0, 5);
           
-          const nextLineIndex = lines.indexOf(line) + 1;
           let machine: number[] = [];
+          const nextLineIndex = lines.indexOf(line) + 1;
           if (nextLineIndex < lines.length) {
               const nextLine = lines[nextLineIndex];
               if (nextLine.toLowerCase().startsWith("machine:")) {
                   machine = extractNumbers(nextLine.substring(nextLine.indexOf(':') + 1)).slice(0,5);
+                  // Normalize machine numbers: [0,0,0,0,0] or invalid length becomes []
+                  if (machine.length === 5 && machine.every(n => n === 0)) {
+                      machine = [];
+                  } else if (machine.length > 0 && machine.length < 5) { // If some numbers but not 5, consider invalid
+                      machine = [];
+                  }
               }
           }
           
-          if (gagnants.length === 5) {
-            let machineNumbers = Array.isArray(machine) ? machine : [];
-            if (machineNumbers.length === 5 && machineNumbers.every(n => n === 0)) {
-                machineNumbers = [];
-            }
+          if (gagnants.length === 5) { // Only add if we have 5 winning numbers
             results.push({
               draw_name: currentDrawName,
               date: currentDate,
               gagnants,
-              machine: machineNumbers,
+              machine: machine, // machine is already normalized or empty
               clientId: `${currentDrawName}-${currentDate}-${Math.random().toString(36).substring(2, 9)}`
             });
+            // Reset currentDrawName and currentDate after successfully parsing a full result set for them
+            // to avoid reusing the same date for subsequent non-Gagnant lines under a new draw name.
+            // However, if the PDF structure groups multiple Gagnant/Machine lines under one Draw/Date header,
+            // this reset might be too aggressive. For now, assume one result set per Draw/Date header.
+            // currentDrawName = null;
+            // currentDate = null; 
           }
         }
       }
@@ -291,7 +313,7 @@ export async function importLotteryDataFromPdf(
     const importedCount = filteredResults.length;
 
     if (results.length === 0) {
-      return { success: false, error: 'Aucun résultat valide n\'a pu être extrait du PDF. Vérifiez la structure du PDF et le contenu des lignes.' };
+      return { success: false, error: 'Aucun résultat valide n\'a pu être extrait du PDF. Vérifiez la structure du PDF: Chaque tirage doit avoir un nom de tirage connu et une date valide sur la même ligne, suivis de "Gagnants:" et optionnellement "Machine:" sur les lignes suivantes.' };
     }
 
     return { 
@@ -299,7 +321,7 @@ export async function importLotteryDataFromPdf(
         data: filteredResults, 
         importedCount,
         originalCount,
-        message: `${originalCount} résultat(s) lu(s) depuis le PDF. ${importedCount} après filtre.` 
+        message: `${originalCount} résultat(s) lu(s) depuis le PDF. ${importedCount} après filtre pour "${filterDrawName || 'tous'}".` 
     };
 
   } catch (error: any) {
@@ -328,14 +350,16 @@ export async function exportLotteryDataToPdf(
       return a.draw_name.localeCompare(b.draw_name);
     });
 
-    doc.setFontSize(18);
-    doc.text(`Export Résultats ${filterDrawName && filterDrawName !== "all" ? filterDrawName : 'Lotocrack'}`, 14, 22);
-    doc.setFontSize(11);
-    doc.setTextColor(100);
-    doc.text(`Exporté le: ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: fr })}`, 14, 30);
-    doc.text(`Source: Lotocrack App`, 14, 36)
+    doc.setFontSize(16);
+    doc.text(`Lotocrack - Résultats de Loterie`, 14, 20);
+    doc.setFontSize(12);
+    doc.text(`Catégorie: ${filterDrawName && filterDrawName !== "all" ? filterDrawName : 'Toutes les catégories'}`, 14, 28);
+    doc.setFontSize(10);
+    doc.text(`Exporté le: ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: fr })}`, 14, 34);
+    doc.text(`Total résultats: ${sortedResults.length}`, 14, 40);
 
-    const tableColumn = ["Date", "Tirage", "Gagnants", "Machine"];
+
+    const tableColumn = ["Date du Tirage", "Nom du Tirage", "Numéros Gagnants", "Numéros Machine"];
     const tableRows: (string | number)[][] = [];
 
     sortedResults.forEach(result => {
@@ -351,10 +375,11 @@ export async function exportLotteryDataToPdf(
     (doc as any).autoTable({
         head: [tableColumn],
         body: tableRows,
-        startY: 45, // Adjusted to make space for the new line
-        theme: 'grid',
-        headStyles: { fillColor: [22, 160, 133] }, 
-        styles: { font: "helvetica", fontSize: 9 },
+        startY: 50, 
+        theme: 'striped', // 'striped', 'grid', 'plain'
+        headStyles: { fillColor: [22, 160, 133] }, // Teal like color for header
+        styles: { font: "helvetica", fontSize: 9, cellPadding: 2 },
+        alternateRowStyles: { fillColor: [245, 245, 245] }, // Light gray for alternate rows
     });
     
     const pdfBlob = doc.output('blob');
@@ -368,3 +393,4 @@ export async function exportLotteryDataToPdf(
     return { success: false, error: `Erreur lors de l'exportation en PDF: ${error.message}` };
   }
 }
+

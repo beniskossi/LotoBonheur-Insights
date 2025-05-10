@@ -10,13 +10,22 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AlertTriangle, UploadCloud, DownloadCloud, Loader2, PlusCircle, Edit, Trash2, RefreshCw, Eye, ShieldAlert, Info, Filter } from "lucide-react";
+import { AlertTriangle, UploadCloud, DownloadCloud, Loader2, PlusCircle, Edit, Trash2, RefreshCw, Eye, ShieldAlert, Info, Filter, FileJson, FileText } from "lucide-react";
 import { useState, useTransition, useEffect, useCallback } from "react";
 import { useForm, Controller, SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
-import { importLotteryDataFromJson, exportLotteryDataToJson, addLotteryResultAction, updateLotteryResultAction, deleteLotteryResultAction, resetCategoryDataAction } from "./actions";
+import { 
+  importLotteryDataFromJson, 
+  exportLotteryDataToJson, 
+  addLotteryResultAction, 
+  updateLotteryResultAction, 
+  deleteLotteryResultAction, 
+  resetCategoryDataAction,
+  importLotteryDataFromPdf,
+  exportLotteryDataToPdf 
+} from "./actions";
 import { getUniqueDrawNames } from "@/config/draw-schedule";
 import { format, parseISO, isValid, parse as dateParse } from 'date-fns';
 import { useSidebar } from '@/components/ui/sidebar'; 
@@ -29,16 +38,25 @@ const lotteryResultSchema = z.object({
   date: z.string().refine(val => {
     try {
       const parsed = dateParse(val, 'yyyy-MM-dd', new Date());
-      return isValid(parsed);
+      return isValid(parsed) && format(parsed, 'yyyy-MM-dd') === val;
     } catch {
       return false;
     }
   }, { message: "Date invalide. Format YYYY-MM-DD attendu." }),
-  gagnants: z.array(z.number().min(1, "Numéro trop petit.").max(90, "Numéro trop grand.")).length(5, "5 numéros gagnants requis."),
-  machine: z.array(z.number().min(1, "Numéro trop petit.").max(90, "Numéro trop grand."))
-    .refine(arr => arr.length === 0 || arr.length === 5, {
-      message: "Les numéros machine doivent être soit 0 (aucun) soit 5 numéros.",
-    }).optional(), 
+  gagnants: z.array(z.number().int().min(1, "Numéro trop petit.").max(90, "Numéro trop grand.")).length(5, "5 numéros gagnants requis."),
+  machine: z.array(z.number().int().min(0, "Numéro machine doit être >= 0").max(90, "Numéro machine trop grand."))
+    .refine(arr => {
+      if (arr.length === 0) return true; // Empty array is fine (no machine numbers)
+      if (arr.length === 5) {
+        // If all are 0, it's a valid way to input "no machine numbers" (will be normalized to [])
+        if (arr.every(num => num === 0)) return true;
+        // Otherwise, all must be actual lottery numbers (1-90)
+        return arr.every(num => num >= 1 && num <= 90);
+      }
+      return false; // Must be 0 or 5 numbers
+    }, {
+      message: "Numéros machine: vide, ou cinq '0', ou 5 numéros (1-90).",
+    }).optional(), // Field is optional, NumberArrayInput will provide [] if empty
 });
 type LotteryFormValues = z.infer<typeof lotteryResultSchema>;
 
@@ -48,9 +66,10 @@ interface NumberArrayInputProps {
   onBlur: () => void;
   id: string;
   placeholder: string;
+  'aria-label': string;
 }
 
-const NumberArrayInput: React.FC<NumberArrayInputProps> = ({ value: rhfValue, onChange: rhfOnChange, onBlur: rhfOnBlur, id, placeholder }) => {
+const NumberArrayInput: React.FC<NumberArrayInputProps> = ({ value: rhfValue, onChange: rhfOnChange, onBlur: rhfOnBlur, id, placeholder, 'aria-label': ariaLabel }) => {
   const [inputValue, setInputValue] = useState(Array.isArray(rhfValue) ? rhfValue.join(',') : '');
 
   useEffect(() => {
@@ -59,7 +78,8 @@ const NumberArrayInput: React.FC<NumberArrayInputProps> = ({ value: rhfValue, on
 
   const parseNumbersString = (str: string): number[] => {
     if (!str.trim()) return [];
-    return str.split(/[,;\s]+/).map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n >= 1 && n <= 90);
+    // Allow 0 for machine numbers input, validation will handle if it's five 0s or actual 1-90 range.
+    return str.split(/[,;\s]+/).map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n >= 0 && n <= 90);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -78,6 +98,7 @@ const NumberArrayInput: React.FC<NumberArrayInputProps> = ({ value: rhfValue, on
       onChange={handleInputChange}
       onBlur={handleInputBlur}
       value={inputValue}
+      aria-label={ariaLabel}
     />
   );
 };
@@ -93,7 +114,9 @@ export default function AdminPage() {
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [initialLoadMessage, setInitialLoadMessage] = useState<string | null>(null);
   
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedJsonFile, setSelectedJsonFile] = useState<File | null>(null);
+  const [selectedPdfFile, setSelectedPdfFile] = useState<File | null>(null);
+  
   const [viewCategory, setViewCategory] = useState<string>("all");
   
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -109,7 +132,7 @@ export default function AdminPage() {
   const [importFilterDrawName, setImportFilterDrawName] = useState<string>("all");
   const [exportFilterDrawName, setExportFilterDrawName] = useState<string>("all");
 
-  const { setOpenMobile: closeSheet } = useSidebar(); 
+  const { setOpenMobile: closeSheet } = useSidebar();
 
   const drawNames = getUniqueDrawNames();
 
@@ -176,70 +199,115 @@ export default function AdminPage() {
   }, [adminData, isLoadingData]);
 
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSelectedFile(event.target.files?.[0] || null);
+  const handleJsonFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setSelectedJsonFile(event.target.files?.[0] || null);
   };
 
-  const handleImportSubmit = async () => {
-    if (!selectedFile) return toast({ title: "Aucun fichier", description: "Sélectionnez un fichier JSON.", variant: "destructive" });
+  const handlePdfFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setSelectedPdfFile(event.target.files?.[0] || null);
+  };
+
+  const processImportedData = (importedData: LotteryResult[] | undefined, source: string) => {
+    if (importedData) {
+      const newDataWithClientIds = importedData.map(r => ({ 
+          ...r, 
+          clientId: r.clientId || `${r.draw_name}-${r.date}-${Math.random().toString(36).substr(2, 9)}`,
+          machine: Array.isArray(r.machine) ? r.machine : [] 
+      }));
+      let addedCount = 0;
+      let duplicatesPrevented = 0;
+      setAdminData(prevData => {
+          const existingKeys = new Set(prevData.map(d => `${d.draw_name}-${d.date}`));
+          const toAdd: LotteryResultWithId[] = [];
+          newDataWithClientIds.forEach(nd => {
+              if (!existingKeys.has(`${nd.draw_name}-${nd.date}`)) {
+                  toAdd.push(nd);
+                  existingKeys.add(`${nd.draw_name}-${nd.date}`); 
+              } else {
+                  duplicatesPrevented++;
+              }
+          });
+          addedCount = toAdd.length;
+          return [...prevData, ...toAdd].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      });
+      
+      let toastDescription = `Importation de ${importedData.length} résultat(s) depuis ${source} terminée.`;
+      toastDescription += ` ${addedCount} nouveau(x) résultat(s) ont été ajouté(s).`;
+      if (duplicatesPrevented > 0) {
+        toastDescription += ` ${duplicatesPrevented} doublon(s) ont été évité(s).`;
+      }
+      toast({ title: "Importation Réussie", description: toastDescription });
+
+    }
+  };
+
+  const handleJsonImportSubmit = async () => {
+    if (!selectedJsonFile) return toast({ title: "Aucun fichier JSON", description: "Sélectionnez un fichier JSON.", variant: "destructive" });
     const formData = new FormData();
-    formData.append("jsonFile", selectedFile);
+    formData.append("jsonFile", selectedJsonFile);
     startImportTransition(async () => {
       const result = await importLotteryDataFromJson(formData, importFilterDrawName === "all" ? null : importFilterDrawName);
-      if (result.success && result.data) {
-        const newDataWithClientIds = result.data.map(r => ({ 
-            ...r, 
-            clientId: r.clientId || `${r.draw_name}-${r.date}-${Math.random().toString(36).substr(2, 9)}`,
-            machine: Array.isArray(r.machine) ? r.machine : [] 
-        }));
-        let addedCount = 0;
-        let duplicatesPrevented = 0;
-        setAdminData(prevData => {
-            const existingKeys = new Set(prevData.map(d => `${d.draw_name}-${d.date}`));
-            const toAdd: LotteryResultWithId[] = [];
-            newDataWithClientIds.forEach(nd => {
-                if (!existingKeys.has(`${nd.draw_name}-${nd.date}`)) {
-                    toAdd.push(nd);
-                    existingKeys.add(`${nd.draw_name}-${nd.date}`); 
-                } else {
-                    duplicatesPrevented++;
-                }
-            });
-            addedCount = toAdd.length;
-            return [...prevData, ...toAdd].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-        });
-        let toastDescription = result.message || `Importation de ${result.originalCount} résultat(s) terminée.`;
-        toastDescription += ` ${result.importedCount || 0} résultat(s) correspondaient à votre filtre.`;
-        toastDescription += ` ${addedCount} nouveau(x) résultat(s) ont été ajouté(s).`;
-        if (duplicatesPrevented > 0) {
-          toastDescription += ` ${duplicatesPrevented} doublon(s) ont été évité(s).`;
-        }
-        toast({ title: "Importation Réussie", description: toastDescription });
-
+      if (result.success) {
+        processImportedData(result.data, "JSON");
       } else {
-        toast({ title: "Erreur d'Importation", description: result.error, variant: "destructive" });
+        toast({ title: "Erreur d'Importation JSON", description: result.error, variant: "destructive" });
       }
-      setSelectedFile(null);
+      setSelectedJsonFile(null);
       const fileInput = document.getElementById('jsonFile') as HTMLInputElement;
       if (fileInput) fileInput.value = '';
     });
   };
-
-  const handleExportSubmit = async () => {
-    startExportTransition(async () => {
-      const result = await exportLotteryDataToJson(adminData, exportFilterDrawName === "all" ? null : exportFilterDrawName);
-      if (result.success && result.jsonData) {
-        const blob = new Blob([result.jsonData], { type: 'application/json' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = result.fileName || 'LotoBonheur_Insights_export_admin.json'; 
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(link.href);
-        toast({ title: "Exportation Réussie", description: "Fichier JSON téléchargé." });
+  
+  const handlePdfImportSubmit = async () => {
+    if (!selectedPdfFile) return toast({ title: "Aucun fichier PDF", description: "Sélectionnez un fichier PDF.", variant: "destructive" });
+    const formData = new FormData();
+    formData.append("pdfFile", selectedPdfFile);
+    startImportTransition(async () => {
+      const result = await importLotteryDataFromPdf(formData, importFilterDrawName === "all" ? null : importFilterDrawName);
+      if (result.success) {
+         processImportedData(result.data, "PDF");
       } else {
-        toast({ title: "Erreur d'Exportation", description: result.error, variant: "destructive" });
+        toast({ title: "Erreur d'Importation PDF", description: result.error, variant: "destructive" });
+      }
+      setSelectedPdfFile(null);
+      const fileInput = document.getElementById('pdfFile') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
+    });
+  };
+
+
+  const handleExportSubmit = async (format: 'json' | 'pdf') => {
+    startExportTransition(async () => {
+      let result;
+      if (format === 'json') {
+        result = await exportLotteryDataToJson(adminData, exportFilterDrawName === "all" ? null : exportFilterDrawName);
+        if (result.success && result.jsonData) {
+            const blob = new Blob([result.jsonData], { type: 'application/json' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = result.fileName || 'Lotocrack_export_admin.json'; 
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+            toast({ title: "Exportation JSON Réussie", description: "Fichier JSON téléchargé." });
+        } else {
+            toast({ title: "Erreur d'Exportation JSON", description: result.error, variant: "destructive" });
+        }
+      } else if (format === 'pdf') {
+        result = await exportLotteryDataToPdf(adminData, exportFilterDrawName === "all" ? null : exportFilterDrawName);
+        if (result.success && result.pdfBlob) {
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(result.pdfBlob);
+            link.download = result.fileName || 'Lotocrack_export_admin.pdf';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+            toast({ title: "Exportation PDF Réussie", description: "Fichier PDF téléchargé." });
+        } else {
+            toast({ title: "Erreur d'Exportation PDF", description: result.error, variant: "destructive" });
+        }
       }
     });
   };
@@ -251,9 +319,16 @@ export default function AdminPage() {
         toast({ title: "Erreur", description: "Un résultat pour ce tirage à cette date existe déjà.", variant: "destructive"});
         return;
       }
+      
+      // Normalize machine numbers: if data.machine is [0,0,0,0,0], treat as empty []
+      let machineNumbers = data.machine ? data.machine : [];
+      if (machineNumbers.length === 5 && machineNumbers.every(n => n === 0)) {
+        machineNumbers = [];
+      }
+
       const actionResult = await addLotteryResultAction({
         ...data,
-        machine: data.machine ? data.machine : [], 
+        machine: machineNumbers, 
       }); 
       if (actionResult.success && actionResult.result) {
         setAdminData(prev => [...prev, { ...actionResult.result!, clientId: actionResult.result!.clientId || Date.now().toString(), machine: Array.isArray(actionResult.result!.machine) ? actionResult.result!.machine : [] }].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
@@ -274,9 +349,14 @@ export default function AdminPage() {
         return;
     }
     startProcessingTransition(async () => {
+       // Normalize machine numbers
+      let machineNumbers = data.machine ? data.machine : [];
+      if (machineNumbers.length === 5 && machineNumbers.every(n => n === 0)) {
+        machineNumbers = [];
+      }
       const actionResult = await updateLotteryResultAction(editingResult.clientId, {
         ...data,
-        machine: data.machine ? data.machine : [], 
+        machine: machineNumbers, 
       }); 
       if (actionResult.success && actionResult.result) {
         setAdminData(prev => prev.map(r => r.clientId === editingResult.clientId ? { ...r, ...actionResult.result!, clientId: editingResult.clientId, machine: Array.isArray(actionResult.result!.machine) ? actionResult.result!.machine : [] } : r).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
@@ -351,7 +431,7 @@ export default function AdminPage() {
     <div className="space-y-8 p-4 md:p-6 lg:p-8">
       <Card>
         <CardHeader>
-          <CardTitle className="text-3xl font-bold">Interface d'Administration LotoBonheur Insights</CardTitle> 
+          <CardTitle className="text-3xl font-bold">Interface d'Administration Lotocrack</CardTitle> 
           <CardDescription>
             Gestion des données des tirages Loto Bonheur. Les modifications ici affectent les données stockées localement dans votre navigateur.
           </CardDescription>
@@ -376,47 +456,80 @@ export default function AdminPage() {
       </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+         {/* JSON Import/Export */}
         <Card>
-          <CardHeader><CardTitle>Importer des Données (JSON)</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label htmlFor="jsonFile">Fichier JSON</Label>
-              <Input id="jsonFile" type="file" accept=".json,application/json" onChange={handleFileChange} className="mt-1" />
-            </div>
-            <div>
-                <Label htmlFor="importFilterDrawName">Filtrer par catégorie de tirage (Optionnel)</Label>
-                <Select value={importFilterDrawName} onValueChange={setImportFilterDrawName}>
-                    <SelectTrigger id="importFilterDrawName"><SelectValue placeholder="Sélectionner une catégorie" /></SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">Toutes les catégories du JSON</SelectItem>
-                        {drawNames.map(name => <SelectItem key={`import-${name}`} value={name}>{name}</SelectItem>)}
-                    </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground mt-1">Si une catégorie est sélectionnée, seuls les résultats de cette catégorie seront importés depuis le JSON.</p>
-            </div>
-            <Button onClick={handleImportSubmit} disabled={isImporting || !selectedFile} className="w-full">
-              {isImporting ? <Loader2 className="animate-spin mr-2" /> : <UploadCloud className="mr-2" />} Importer
-            </Button>
-          </CardContent>
+            <CardHeader><CardTitle className="flex items-center"><FileJson className="mr-2"/>Importer/Exporter (JSON)</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+                <div>
+                    <Label htmlFor="jsonFile">Importer un fichier JSON</Label>
+                    <Input id="jsonFile" type="file" accept=".json,application/json" onChange={handleJsonFileChange} className="mt-1" />
+                </div>
+                <div className="mt-2">
+                    <Label htmlFor="importFilterDrawNameJson">Filtrer par catégorie (Optionnel)</Label>
+                    <Select value={importFilterDrawName} onValueChange={setImportFilterDrawName}>
+                        <SelectTrigger id="importFilterDrawNameJson"><SelectValue placeholder="Sélectionner une catégorie" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Toutes les catégories du JSON</SelectItem>
+                            {drawNames.map(name => <SelectItem key={`import-json-${name}`} value={name}>{name}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                </div>
+                <Button onClick={handleJsonImportSubmit} disabled={isImporting || !selectedJsonFile} className="w-full mt-2">
+                {isImporting && selectedJsonFile ? <Loader2 className="animate-spin mr-2" /> : <UploadCloud className="mr-2" />} Importer JSON
+                </Button>
+                <hr className="my-4"/>
+                <div>
+                    <Label htmlFor="exportFilterDrawNameJson">Exporter par catégorie (Optionnel)</Label>
+                     <Select value={exportFilterDrawName} onValueChange={setExportFilterDrawName}>
+                        <SelectTrigger id="exportFilterDrawNameJson"><SelectValue placeholder="Sélectionner une catégorie" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Toutes les catégories</SelectItem>
+                            {drawNames.map(name => <SelectItem key={`export-json-${name}`} value={name}>{name}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                </div>
+                <Button onClick={() => handleExportSubmit('json')} disabled={isExporting || adminData.length === 0} className="w-full mt-2">
+                {isExporting ? <Loader2 className="animate-spin mr-2" /> : <DownloadCloud className="mr-2" />} Exporter JSON
+                </Button>
+            </CardContent>
         </Card>
+
+        {/* PDF Import/Export */}
         <Card>
-          <CardHeader><CardTitle>Exporter les Données (JSON)</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-                <Label htmlFor="exportFilterDrawName">Filtrer par catégorie de tirage (Optionnel)</Label>
-                <Select value={exportFilterDrawName} onValueChange={setExportFilterDrawName}>
-                    <SelectTrigger id="exportFilterDrawName"><SelectValue placeholder="Sélectionner une catégorie" /></SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">Toutes les catégories</SelectItem>
-                        {drawNames.map(name => <SelectItem key={`export-${name}`} value={name}>{name}</SelectItem>)}
-                    </SelectContent>
-                </Select>
-                 <p className="text-xs text-muted-foreground mt-1">Si une catégorie est sélectionnée, seuls les résultats de cette catégorie seront exportés.</p>
-            </div>
-            <Button onClick={handleExportSubmit} disabled={isExporting || adminData.length === 0} className="w-full">
-              {isExporting ? <Loader2 className="animate-spin mr-2" /> : <DownloadCloud className="mr-2" />} Exporter
-            </Button>
-          </CardContent>
+            <CardHeader><CardTitle className="flex items-center"><FileText className="mr-2"/>Importer/Exporter (PDF)</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+                 <div>
+                    <Label htmlFor="pdfFile">Importer un fichier PDF</Label>
+                    <Input id="pdfFile" type="file" accept=".pdf,application/pdf" onChange={handlePdfFileChange} className="mt-1" />
+                </div>
+                 <div className="mt-2">
+                    <Label htmlFor="importFilterDrawNamePdf">Filtrer par catégorie (Optionnel)</Label>
+                    <Select value={importFilterDrawName} onValueChange={setImportFilterDrawName}>
+                        <SelectTrigger id="importFilterDrawNamePdf"><SelectValue placeholder="Sélectionner une catégorie" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Toutes les catégories du PDF</SelectItem>
+                            {drawNames.map(name => <SelectItem key={`import-pdf-${name}`} value={name}>{name}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                </div>
+                <Button onClick={handlePdfImportSubmit} disabled={isImporting || !selectedPdfFile} className="w-full mt-2">
+                {isImporting && selectedPdfFile ? <Loader2 className="animate-spin mr-2" /> : <UploadCloud className="mr-2" />} Importer PDF
+                </Button>
+                <hr className="my-4"/>
+                <div>
+                    <Label htmlFor="exportFilterDrawNamePdf">Exporter par catégorie (Optionnel)</Label>
+                     <Select value={exportFilterDrawName} onValueChange={setExportFilterDrawName}>
+                        <SelectTrigger id="exportFilterDrawNamePdf"><SelectValue placeholder="Sélectionner une catégorie" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Toutes les catégories</SelectItem>
+                            {drawNames.map(name => <SelectItem key={`export-pdf-${name}`} value={name}>{name}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                </div>
+                <Button onClick={() => handleExportSubmit('pdf')} disabled={isExporting || adminData.length === 0} className="w-full mt-2">
+                {isExporting ? <Loader2 className="animate-spin mr-2" /> : <DownloadCloud className="mr-2" />} Exporter PDF
+                </Button>
+            </CardContent>
         </Card>
       </div>
       
@@ -557,23 +670,25 @@ export default function AdminPage() {
                     value={field.value}
                     onChange={field.onChange}
                     onBlur={field.onBlur}
+                    aria-label="Numéros Gagnants"
                   />
                 )}
               />
               {errors.gagnants?.message && <p className="text-destructive text-sm">{errors.gagnants.message}</p>}
             </div>
              <div>
-              <Label htmlFor="add_machine">Numéros Machine (Optionnel: 0 ou 5 numéros)</Label>
+              <Label htmlFor="add_machine">Numéros Machine (Optionnel: vide, ou cinq '0', ou 5 numéros)</Label>
                <Controller
                 name="machine"
                 control={control}
                 render={({ field }) => (
                   <NumberArrayInput
                     id="add_machine"
-                    placeholder="Optionnel: 6,7,8,9,10 ou laisser vide"
+                    placeholder="Ex: 6,7,8,9,10 ou 0,0,0,0,0 ou laisser vide"
                     value={field.value}
                     onChange={field.onChange}
                     onBlur={field.onBlur}
+                    aria-label="Numéros Machine"
                   />
                 )}
               />
@@ -624,23 +739,25 @@ export default function AdminPage() {
                         value={field.value}
                         onChange={field.onChange}
                         onBlur={field.onBlur}
+                        aria-label="Numéros Gagnants (modifier)"
                       />
                     )}
                 />
                 {errors.gagnants?.message && <p className="text-destructive text-sm">{errors.gagnants.message}</p>}
               </div>
               <div>
-                <Label htmlFor="edit_machine">Numéros Machine (Optionnel: 0 ou 5 numéros)</Label>
+                <Label htmlFor="edit_machine">Numéros Machine (Optionnel: vide, ou cinq '0', ou 5 numéros)</Label>
                 <Controller
                     name="machine"
                     control={control}
                     render={({ field }) => (
                       <NumberArrayInput
                         id="edit_machine"
-                        placeholder="Optionnel: 6,7,8,9,10 ou laisser vide"
+                        placeholder="Ex: 6,7,8,9,10 ou 0,0,0,0,0 ou laisser vide"
                         value={field.value}
                         onChange={field.onChange}
                         onBlur={field.onBlur}
+                        aria-label="Numéros Machine (modifier)"
                       />
                     )}
                 />
