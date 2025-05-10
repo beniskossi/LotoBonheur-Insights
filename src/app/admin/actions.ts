@@ -7,7 +7,7 @@ import { format, parseISO, isValid, parse as dateParse } from 'date-fns';
 import { z } from 'zod';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable'; // Augments jsPDF
-import pdfParse from 'pdf-parse'; // For parsing PDF content
+// import pdfParse from 'pdf-parse'; // Removed top-level static import
 import { fr } from 'date-fns/locale';
 
 
@@ -204,7 +204,7 @@ export async function resetCategoryDataAction(category: string): Promise<{ succe
 }
 
 
-// PDF Import/Export (Simplified for example)
+// PDF Import/Export
 const extractNumbers = (text: string | null): number[] => {
   if (!text) return [];
   return text.match(/\d+/g)?.map(Number) || [];
@@ -224,6 +224,7 @@ export async function importLotteryDataFromPdf(
   }
 
   try {
+    const pdfParse = (await import('pdf-parse')).default; // Dynamic import
     const arrayBuffer = await file.arrayBuffer();
     const pdfData = await pdfParse(arrayBuffer);
     const text = pdfData.text;
@@ -233,23 +234,16 @@ export async function importLotteryDataFromPdf(
     let currentDrawName: string | null = null;
     let currentDate: string | null = null;
 
-    // Example parsing logic (highly dependent on PDF structure)
-    // This is a very simplified and potentially fragile parser.
-    // A more robust parser would use regex based on the specific PDF format.
     for (const line of lines) {
-      // Heuristic: If a line matches a known draw name, set it as current
-      const knownDrawName = getUniqueDrawNames().find(dn => line.includes(dn));
+      const knownDrawName = getUniqueDrawNames().find(dn => line.toLowerCase().includes(dn.toLowerCase()));
       if (knownDrawName) {
         currentDrawName = knownDrawName;
-        // Attempt to extract date if on the same line or nearby, this is very naive
-        // Example: "Loto Bonheur Diamant - Samedi 06 Juillet 2024"
         const dateMatch = line.match(/(\d{1,2})\s+(Janvier|Février|Mars|Avril|Mai|Juin|Juillet|Août|Septembre|Octobre|Novembre|Décembre)\s+(\d{4})/i);
         if (dateMatch) {
             try {
                 const day = parseInt(dateMatch[1], 10);
                 const monthName = dateMatch[2];
                 const year = parseInt(dateMatch[3], 10);
-                // Convert French month name to number. Locale 'fr' is important.
                 const tempDate = dateParse(`${day} ${monthName} ${year}`, 'd MMMM yyyy', new Date(), { locale: fr });
                 if (isValid(tempDate)) {
                     currentDate = format(tempDate, 'yyyy-MM-dd');
@@ -263,7 +257,6 @@ export async function importLotteryDataFromPdf(
         if (line.toLowerCase().startsWith("gagnant:") || line.toLowerCase().startsWith("gagnants:")) {
           const gagnants = extractNumbers(line.substring(line.indexOf(':') + 1)).slice(0, 5);
           
-          // Try to find machine numbers on the next relevant line
           const nextLineIndex = lines.indexOf(line) + 1;
           let machine: number[] = [];
           if (nextLineIndex < lines.length) {
@@ -277,23 +270,14 @@ export async function importLotteryDataFromPdf(
             let machineNumbers = Array.isArray(machine) ? machine : [];
             if (machineNumbers.length === 5 && machineNumbers.every(n => n === 0)) {
                 machineNumbers = [];
-            } else if (machineNumbers.length > 0 && machineNumbers.length < 5) {
-                // If some machine numbers found but not 5, treat as invalid/incomplete for this entry.
-                // Depending on strictness, might make machineNumbers = []
-                console.warn(`Incomplete machine numbers for ${currentDrawName} on ${currentDate}: ${machineNumbers.join(',')}`);
             }
-
-
             results.push({
               draw_name: currentDrawName,
               date: currentDate,
               gagnants,
-              machine: machineNumbers.length === 5 || machineNumbers.length === 0 ? machineNumbers : [], // only accept 0 or 5
+              machine: machineNumbers,
               clientId: `${currentDrawName}-${currentDate}-${Math.random().toString(36).substring(2, 9)}`
             });
-            // Reset for next entry unless date is part of a block
-            // currentDrawName = null; 
-            // currentDate = null; // This depends on PDF structure, if multiple results share a date/draw header.
           }
         }
       }
@@ -307,7 +291,7 @@ export async function importLotteryDataFromPdf(
     const importedCount = filteredResults.length;
 
     if (results.length === 0) {
-      return { success: false, error: 'Aucun résultat valide n\'a pu être extrait du PDF. Vérifiez la structure du PDF.' };
+      return { success: false, error: 'Aucun résultat valide n\'a pu être extrait du PDF. Vérifiez la structure du PDF et le contenu des lignes.' };
     }
 
     return { 
@@ -345,11 +329,11 @@ export async function exportLotteryDataToPdf(
     });
 
     doc.setFontSize(18);
-    doc.text(`Export Résultats LotoBonheur${filterDrawName && filterDrawName !== "all" ? ` - ${filterDrawName}` : ' - Tous'}`, 14, 22);
+    doc.text(`Export Résultats ${filterDrawName && filterDrawName !== "all" ? filterDrawName : 'Lotocrack'}`, 14, 22);
     doc.setFontSize(11);
     doc.setTextColor(100);
     doc.text(`Exporté le: ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: fr })}`, 14, 30);
-
+    doc.text(`Source: Lotocrack App`, 14, 36)
 
     const tableColumn = ["Date", "Tirage", "Gagnants", "Machine"];
     const tableRows: (string | number)[][] = [];
@@ -367,15 +351,15 @@ export async function exportLotteryDataToPdf(
     (doc as any).autoTable({
         head: [tableColumn],
         body: tableRows,
-        startY: 35,
+        startY: 45, // Adjusted to make space for the new line
         theme: 'grid',
-        headStyles: { fillColor: [22, 160, 133] }, // Example: Teal header
+        headStyles: { fillColor: [22, 160, 133] }, 
         styles: { font: "helvetica", fontSize: 9 },
     });
     
     const pdfBlob = doc.output('blob');
     const currentDate = format(new Date(), 'yyyyMMdd_HHmmss');
-    const fileName = `LotoBonheurInsights_Export_${filterDrawName && filterDrawName !== "all" ? filterDrawName.replace(/\s+/g, '_') : 'Tous'}_${currentDate}.pdf`;
+    const fileName = `Lotocrack_Export_${filterDrawName && filterDrawName !== "all" ? filterDrawName.replace(/\s+/g, '_') : 'Tous'}_${currentDate}.pdf`;
 
     return { success: true, pdfBlob, fileName };
 
