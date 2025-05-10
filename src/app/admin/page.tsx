@@ -16,10 +16,10 @@ import { useForm, Controller, SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
-import { importLotteryDataFromPdf, exportLotteryDataToPdf, addLotteryResultAction, updateLotteryResultAction, deleteLotteryResultAction, resetCategoryDataAction } from "./actions";
+import { importLotteryDataFromJson, exportLotteryDataToJson, addLotteryResultAction, updateLotteryResultAction, deleteLotteryResultAction, resetCategoryDataAction } from "./actions";
 import { getUniqueDrawNames } from "@/config/draw-schedule";
 import { format, parseISO, isValid, parse as dateParse } from 'date-fns';
-import { useSidebar } from '@/components/ui/sidebar'; // Import useSidebar
+import { useSidebar } from '@/components/ui/sidebar'; 
 
 type LotteryResultWithId = LotteryResult & { clientId: string };
 const ADMIN_DATA_STORAGE_KEY = 'lotoBonheurInsightsAdminData';
@@ -38,13 +38,12 @@ const lotteryResultSchema = z.object({
   machine: z.array(z.number().min(1, "Numéro trop petit.").max(90, "Numéro trop grand."))
     .refine(arr => arr.length === 0 || arr.length === 5, {
       message: "Les numéros machine doivent être soit 0 (aucun) soit 5 numéros.",
-    }).optional(), // Made machine optional
+    }).optional(), 
 });
 type LotteryFormValues = z.infer<typeof lotteryResultSchema>;
 
-// Helper component for number array input
 interface NumberArrayInputProps {
-  value: number[] | undefined; // Allow undefined for optional fields
+  value: number[] | undefined;
   onChange: (numbers: number[]) => void;
   onBlur: () => void;
   id: string;
@@ -65,12 +64,10 @@ const NumberArrayInput: React.FC<NumberArrayInputProps> = ({ value: rhfValue, on
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInputValue(e.target.value);
-    // Parse and call onChange immediately for better UX
     rhfOnChange(parseNumbersString(e.target.value));
   };
 
   const handleInputBlur = () => {
-    // rhfOnChange is already called in handleInputChange, so only onBlur is needed here
     rhfOnBlur();
   };
 
@@ -112,7 +109,7 @@ export default function AdminPage() {
   const [importFilterDrawName, setImportFilterDrawName] = useState<string>("all");
   const [exportFilterDrawName, setExportFilterDrawName] = useState<string>("all");
 
-  const { setOpenMobile: closeSheet } = useSidebar(); // Get closeSheet from context
+  const { setOpenMobile: closeSheet } = useSidebar(); 
 
   const drawNames = getUniqueDrawNames();
 
@@ -184,15 +181,15 @@ export default function AdminPage() {
   };
 
   const handleImportSubmit = async () => {
-    if (!selectedFile) return toast({ title: "Aucun fichier", description: "Sélectionnez un PDF.", variant: "destructive" });
+    if (!selectedFile) return toast({ title: "Aucun fichier", description: "Sélectionnez un fichier JSON.", variant: "destructive" });
     const formData = new FormData();
-    formData.append("pdfFile", selectedFile);
+    formData.append("jsonFile", selectedFile);
     startImportTransition(async () => {
-      const result = await importLotteryDataFromPdf(formData, importFilterDrawName === "all" ? null : importFilterDrawName);
+      const result = await importLotteryDataFromJson(formData, importFilterDrawName === "all" ? null : importFilterDrawName);
       if (result.success && result.data) {
         const newDataWithClientIds = result.data.map(r => ({ 
             ...r, 
-            clientId: `${r.draw_name}-${r.date}-${Math.random().toString(36).substr(2, 9)}`,
+            clientId: r.clientId || `${r.draw_name}-${r.date}-${Math.random().toString(36).substr(2, 9)}`,
             machine: Array.isArray(r.machine) ? r.machine : [] 
         }));
         let addedCount = 0;
@@ -223,27 +220,24 @@ export default function AdminPage() {
         toast({ title: "Erreur d'Importation", description: result.error, variant: "destructive" });
       }
       setSelectedFile(null);
-      const fileInput = document.getElementById('pdfFile') as HTMLInputElement;
+      const fileInput = document.getElementById('jsonFile') as HTMLInputElement;
       if (fileInput) fileInput.value = '';
     });
   };
 
   const handleExportSubmit = async () => {
     startExportTransition(async () => {
-      const result = await exportLotteryDataToPdf(adminData, exportFilterDrawName === "all" ? null : exportFilterDrawName);
-      if (result.success && result.pdfData) {
-        const byteCharacters = atob(result.pdfData);
-        const byteNumbers = new Array(byteCharacters.length).fill(0).map((_, i) => byteCharacters.charCodeAt(i));
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: 'application/pdf' });
+      const result = await exportLotteryDataToJson(adminData, exportFilterDrawName === "all" ? null : exportFilterDrawName);
+      if (result.success && result.jsonData) {
+        const blob = new Blob([result.jsonData], { type: 'application/json' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = result.fileName || 'LotoBonheur_Insights_export_admin.pdf'; 
+        link.download = result.fileName || 'LotoBonheur_Insights_export_admin.json'; 
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(link.href);
-        toast({ title: "Exportation Réussie", description: "Fichier PDF téléchargé." });
+        toast({ title: "Exportation Réussie", description: "Fichier JSON téléchargé." });
       } else {
         toast({ title: "Erreur d'Exportation", description: result.error, variant: "destructive" });
       }
@@ -383,22 +377,22 @@ export default function AdminPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
-          <CardHeader><CardTitle>Importer des Données (PDF)</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Importer des Données (JSON)</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <Label htmlFor="pdfFile">Fichier PDF</Label>
-              <Input id="pdfFile" type="file" accept=".pdf" onChange={handleFileChange} className="mt-1" />
+              <Label htmlFor="jsonFile">Fichier JSON</Label>
+              <Input id="jsonFile" type="file" accept=".json,application/json" onChange={handleFileChange} className="mt-1" />
             </div>
             <div>
                 <Label htmlFor="importFilterDrawName">Filtrer par catégorie de tirage (Optionnel)</Label>
                 <Select value={importFilterDrawName} onValueChange={setImportFilterDrawName}>
                     <SelectTrigger id="importFilterDrawName"><SelectValue placeholder="Sélectionner une catégorie" /></SelectTrigger>
                     <SelectContent>
-                        <SelectItem value="all">Toutes les catégories du PDF</SelectItem>
+                        <SelectItem value="all">Toutes les catégories du JSON</SelectItem>
                         {drawNames.map(name => <SelectItem key={`import-${name}`} value={name}>{name}</SelectItem>)}
                     </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground mt-1">Si une catégorie est sélectionnée, seuls les résultats de cette catégorie seront importés depuis le PDF.</p>
+                <p className="text-xs text-muted-foreground mt-1">Si une catégorie est sélectionnée, seuls les résultats de cette catégorie seront importés depuis le JSON.</p>
             </div>
             <Button onClick={handleImportSubmit} disabled={isImporting || !selectedFile} className="w-full">
               {isImporting ? <Loader2 className="animate-spin mr-2" /> : <UploadCloud className="mr-2" />} Importer
@@ -406,7 +400,7 @@ export default function AdminPage() {
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle>Exporter les Données (PDF)</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Exporter les Données (JSON)</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <div>
                 <Label htmlFor="exportFilterDrawName">Filtrer par catégorie de tirage (Optionnel)</Label>
@@ -678,3 +672,4 @@ export default function AdminPage() {
     </div>
   );
 }
+
