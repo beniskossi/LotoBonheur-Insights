@@ -24,7 +24,7 @@ const SinglePredictionSchema = z.object({
 });
 export type SinglePrediction = z.infer<typeof SinglePredictionSchema>;
 
-export const LotteryPredictionInputSchema = z.object({
+const LotteryPredictionInputSchema = z.object({
   results: z.array(
     z.object({
       draw_name: z.string(),
@@ -37,7 +37,7 @@ export const LotteryPredictionInputSchema = z.object({
 });
 export type LotteryPredictionInput = z.infer<typeof LotteryPredictionInputSchema>;
 
-export const LotteryPredictionOutputSchema = z.object({
+const LotteryPredictionOutputSchema = z.object({
   drawName: z.string(),
   allPredictions: z.array(SinglePredictionSchema).describe("List of predictions from various methods."),
   recommendedPrediction: SinglePredictionSchema.describe("The overall recommended prediction, typically from a hybrid method."),
