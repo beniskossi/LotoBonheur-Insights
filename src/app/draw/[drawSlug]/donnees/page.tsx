@@ -14,7 +14,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 export default function DrawDataPage() {
   const params = useParams();
   const drawSlug = params.drawSlug as string;
-  
+
   const [results, setResults] = useState<LotteryResult[]>([]);
   const [filteredResults, setFilteredResults] = useState<LotteryResult[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -33,8 +33,18 @@ export default function DrawDataPage() {
     try {
       const response = await fetch('/api/results');
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Erreur HTTP: ${response.status}`);
+        let errorMsg = `Erreur HTTP: ${response.status} ${response.statusText}`;
+        try {
+          const errorData = await response.json();
+          errorMsg = errorData.error || errorMsg;
+        } catch (e) {
+          try {
+            const errorText = await response.text();
+            console.error("Server error response (text) for draw data:", errorText);
+            if (errorText && errorText.length < 200) errorMsg += ` - ${errorText.substring(0,100)}`;
+          } catch (textErr) { /* Do nothing */ }
+        }
+        throw new Error(errorMsg);
       }
       const data: LotteryResult[] = await response.json();
       setResults(data);
@@ -53,8 +63,10 @@ export default function DrawDataPage() {
   useEffect(() => {
     if (results.length > 0 && drawName) {
       setFilteredResults(results.filter(result => result.draw_name === drawName));
+    } else if (!isLoading && drawName) { // If not loading and drawName is set, but results might be empty
+      setFilteredResults([]); // Ensure filteredResults is empty if allResults is empty
     }
-  }, [results, drawName]);
+  }, [results, drawName, isLoading]);
 
   if (!drawName && !isLoading) {
     return <ErrorMessage title="Catégorie Invalide" message={`La catégorie de tirage "${drawSlug}" n'a pas été trouvée.`} />;
@@ -78,13 +90,13 @@ export default function DrawDataPage() {
 
       {isLoading && <LoadingSpinner />}
       {error && <ErrorMessage message={error} />}
-      
+
       {!isLoading && !error && filteredResults.length === 0 && (
          <Alert>
           <Info className="h-4 w-4" />
           <AlertTitle>Aucun Résultat</AlertTitle>
           <AlertDescription>
-            Aucun résultat n'a été trouvé pour la catégorie "{drawName}" pour le moment.
+            Aucun résultat n'a été trouvé pour la catégorie "{drawName || 'sélectionnée'}" pour le moment.
             Les données sont peut-être en cours de collecte ou ce tirage n'a pas encore eu lieu récemment.
           </AlertDescription>
         </Alert>
@@ -93,7 +105,7 @@ export default function DrawDataPage() {
       {!isLoading && !error && filteredResults.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {filteredResults.map((result, index) => (
-            <LotteryResultCard key={`${result.draw_name}-${result.date}-${index}`} result={result} />
+            <LotteryResultCard key={`${result.draw_name}-${result.date}-${index}-${result.gagnants.join('')}`} result={result} />
           ))}
         </div>
       )}

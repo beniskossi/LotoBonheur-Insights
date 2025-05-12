@@ -10,28 +10,32 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AlertTriangle, UploadCloud, DownloadCloud, Loader2, PlusCircle, Edit, Trash2, RefreshCw, Eye, ShieldAlert, Info, Filter, FileJson, FileText } from "lucide-react";
+import { AlertTriangle, UploadCloud, DownloadCloud, Loader2, PlusCircle, Edit, Trash2, RefreshCw, Eye, ShieldAlert, Info, Filter, FileJson, FileText, Image as ImageIcon } from "lucide-react";
 import { useState, useTransition, useEffect, useCallback } from "react";
 import { useForm, Controller, SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
-import { 
-  importLotteryDataFromJson, 
-  exportLotteryDataToJson, 
-  addLotteryResultAction, 
-  updateLotteryResultAction, 
-  deleteLotteryResultAction, 
+import {
+  importLotteryDataFromJson,
+  exportLotteryDataToJson,
+  addLotteryResultAction,
+  updateLotteryResultAction,
+  deleteLotteryResultAction,
   resetCategoryDataAction,
   importLotteryDataFromPdf,
-  exportLotteryDataToPdf 
+  exportLotteryDataToPdf,
+  analyzeLotteryImageAction,
+  exportLotteryDataToImage
 } from "./actions";
 import { getUniqueDrawNames } from "@/config/draw-schedule";
 import { format, parseISO, isValid, parse as dateParse } from 'date-fns';
-import { useSidebar } from '@/components/ui/sidebar'; 
+import { useSidebar } from '@/components/ui/sidebar';
+import Image from "next/image";
+
 
 type LotteryResultWithId = LotteryResult & { clientId: string };
-const ADMIN_DATA_STORAGE_KEY = 'lotoBonheurInsightsAdminData';
+const ADMIN_DATA_STORAGE_KEY = 'lotocrackAdminData'; // Changed key to be more specific
 
 const lotteryResultSchema = z.object({
   draw_name: z.string().min(1, "Le nom du tirage est requis."),
@@ -46,17 +50,15 @@ const lotteryResultSchema = z.object({
   gagnants: z.array(z.number().int().min(1, "Numéro trop petit.").max(90, "Numéro trop grand.")).length(5, "5 numéros gagnants requis."),
   machine: z.array(z.number().int().min(0, "Numéro machine doit être >= 0").max(90, "Numéro machine trop grand."))
     .refine(arr => {
-      if (arr.length === 0) return true; // Empty array is fine (no machine numbers)
+      if (arr.length === 0) return true;
       if (arr.length === 5) {
-        // If all are 0, it's a valid way to input "no machine numbers" (will be normalized to [])
         if (arr.every(num => num === 0)) return true;
-        // Otherwise, all must be actual lottery numbers (1-90)
         return arr.every(num => num >= 1 && num <= 90);
       }
-      return false; // Must be 0 or 5 numbers
+      return false;
     }, {
       message: "Numéros machine: vide, ou cinq '0', ou 5 numéros (1-90).",
-    }).optional(), // Field is optional, NumberArrayInput will provide [] if empty
+    }).optional().default([]),
 });
 type LotteryFormValues = z.infer<typeof lotteryResultSchema>;
 
@@ -67,27 +69,39 @@ interface NumberArrayInputProps {
   id: string;
   placeholder: string;
   'aria-label': string;
+  disabled?: boolean;
 }
 
-const NumberArrayInput: React.FC<NumberArrayInputProps> = ({ value: rhfValue, onChange: rhfOnChange, onBlur: rhfOnBlur, id, placeholder, 'aria-label': ariaLabel }) => {
+const NumberArrayInput: React.FC<NumberArrayInputProps> = ({ value: rhfValue, onChange: rhfOnChange, onBlur: rhfOnBlur, id, placeholder, 'aria-label': ariaLabel, disabled }) => {
   const [inputValue, setInputValue] = useState(Array.isArray(rhfValue) ? rhfValue.join(',') : '');
 
   useEffect(() => {
+    // Ensure that if rhfValue is undefined or not an array, inputValue is an empty string
     setInputValue(Array.isArray(rhfValue) ? rhfValue.join(',') : '');
   }, [rhfValue]);
 
   const parseNumbersString = (str: string): number[] => {
     if (!str.trim()) return [];
-    // Allow 0 for machine numbers input, validation will handle if it's five 0s or actual 1-90 range.
-    return str.split(/[,;\s]+/).map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n >= 0 && n <= 90);
+    return str.split(/[,;\s]+/)
+              .map(s => s.trim())
+              .filter(s => s.length > 0) // Filter out empty strings resulting from multiple separators
+              .map(s => parseInt(s, 10))
+              .filter(n => !isNaN(n) && n >= 0 && n <= 90);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setInputValue(e.target.value);
-    rhfOnChange(parseNumbersString(e.target.value));
+    const rawValue = e.target.value;
+    setInputValue(rawValue);
+    // Only call RHF onChange with parsed numbers if the input is valid-ish or empty
+    // This prevents premature validation errors if user is typing "1,"
+    if (/^[\d,\s]*$/.test(rawValue)) {
+        rhfOnChange(parseNumbersString(rawValue));
+    }
   };
 
   const handleInputBlur = () => {
+    // Final parsing and update on blur to ensure RHF has the cleaned array
+    rhfOnChange(parseNumbersString(inputValue));
     rhfOnBlur();
   };
 
@@ -99,6 +113,7 @@ const NumberArrayInput: React.FC<NumberArrayInputProps> = ({ value: rhfValue, on
       onBlur={handleInputBlur}
       value={inputValue}
       aria-label={ariaLabel}
+      disabled={disabled}
     />
   );
 };
@@ -113,16 +128,19 @@ export default function AdminPage() {
   const [adminData, setAdminData] = useState<LotteryResultWithId[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [initialLoadMessage, setInitialLoadMessage] = useState<string | null>(null);
-  
+
   const [selectedJsonFile, setSelectedJsonFile] = useState<File | null>(null);
   const [selectedPdfFile, setSelectedPdfFile] = useState<File | null>(null);
-  
+  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+
+
   const [viewCategory, setViewCategory] = useState<string>("all");
-  
+
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingResult, setEditingResult] = useState<LotteryResultWithId | null>(null);
-  
+
   const [isConfirmDeleteDialogOpen, setIsConfirmDeleteDialogOpen] = useState(false);
   const [deletingResultClientId, setDeletingResultClientId] = useState<string | null>(null);
 
@@ -136,16 +154,16 @@ export default function AdminPage() {
 
   const drawNames = getUniqueDrawNames();
 
-  const { register, handleSubmit, control, reset, formState: { errors } } = useForm<LotteryFormValues>({
+  const { register, handleSubmit, control, reset, formState: { errors }, setValue } = useForm<LotteryFormValues>({
     resolver: zodResolver(lotteryResultSchema),
     defaultValues: {
       draw_name: drawNames.length > 0 ? drawNames[0] : "",
       date: format(new Date(), 'yyyy-MM-dd'),
       gagnants: [],
-      machine: [] 
+      machine: []
     }
   });
-  
+
   const fetchAndInitializeAdminData = useCallback(async () => {
     setIsLoadingData(true);
     setInitialLoadMessage(null);
@@ -160,17 +178,27 @@ export default function AdminPage() {
         return;
       }
 
-      const response = await fetch('/api/results'); 
+      const response = await fetch('/api/results');
       if (!response.ok) {
-         const errorText = await response.text();
-        throw new Error(`Échec de la récupération des données initiales de l'API: ${response.status} ${errorText || response.statusText}`);
+        let errorMsg = `Échec de la récupération des données API: ${response.status} ${response.statusText}`;
+        try {
+          const errorData = await response.json();
+          errorMsg = errorData.error || errorMsg;
+        } catch (e) {
+           try {
+            const errorText = await response.text();
+            console.error("Server error response (text) for initial data load:", errorText);
+            if (errorText && errorText.length < 200) errorMsg += ` - ${errorText.substring(0,100)}`;
+          } catch (textErr) { /* Do nothing more */ }
+        }
+        throw new Error(errorMsg);
       }
       const results: LotteryResult[] = await response.json();
       if (Array.isArray(results)) {
-        const dataWithClientIds = results.map(r => ({ 
-            ...r, 
+        const dataWithClientIds = results.map(r => ({
+            ...r,
             clientId: r.clientId || `${r.draw_name}-${r.date}-${Math.random().toString(36).substr(2, 9)}`,
-            machine: Array.isArray(r.machine) ? r.machine : [] 
+            machine: Array.isArray(r.machine) ? r.machine : []
         }));
         setAdminData(dataWithClientIds);
         localStorage.setItem(ADMIN_DATA_STORAGE_KEY, JSON.stringify(dataWithClientIds));
@@ -179,10 +207,10 @@ export default function AdminPage() {
         setAdminData([]);
         setInitialLoadMessage("Aucun résultat valide retourné par l'API. Les données locales seront vides.");
       }
-    } catch (error) {
-      toast({ title: "Erreur de chargement initial", description: (error as Error).message, variant: "destructive" });
-      setAdminData([]); 
-      setInitialLoadMessage(`Erreur lors du chargement initial des données: ${(error as Error).message}`);
+    } catch (error: any) {
+      toast({ title: "Erreur de chargement initial", description: error.message, variant: "destructive" });
+      setAdminData([]);
+      setInitialLoadMessage(`Erreur lors du chargement initial des données: ${error.message}`);
     } finally {
       setIsLoadingData(false);
     }
@@ -193,7 +221,7 @@ export default function AdminPage() {
   }, [fetchAndInitializeAdminData]);
 
   useEffect(() => {
-    if (!isLoadingData) { 
+    if (!isLoadingData) {
       localStorage.setItem(ADMIN_DATA_STORAGE_KEY, JSON.stringify(adminData));
     }
   }, [adminData, isLoadingData]);
@@ -207,12 +235,27 @@ export default function AdminPage() {
     setSelectedPdfFile(event.target.files?.[0] || null);
   };
 
+  const handleImageFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] || null;
+    setSelectedImageFile(file);
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      setImagePreview(null);
+    }
+  };
+
+
   const processImportedData = (importedData: LotteryResult[] | undefined, source: string) => {
-    if (importedData) {
-      const newDataWithClientIds = importedData.map(r => ({ 
-          ...r, 
+    if (importedData && importedData.length > 0) {
+      const newDataWithClientIds = importedData.map(r => ({
+          ...r,
           clientId: r.clientId || `${r.draw_name}-${r.date}-${Math.random().toString(36).substr(2, 9)}`,
-          machine: Array.isArray(r.machine) ? r.machine : [] 
+          machine: Array.isArray(r.machine) ? r.machine : []
       }));
       let addedCount = 0;
       let duplicatesPrevented = 0;
@@ -222,7 +265,7 @@ export default function AdminPage() {
           newDataWithClientIds.forEach(nd => {
               if (!existingKeys.has(`${nd.draw_name}-${nd.date}`)) {
                   toAdd.push(nd);
-                  existingKeys.add(`${nd.draw_name}-${nd.date}`); 
+                  existingKeys.add(`${nd.draw_name}-${nd.date}`);
               } else {
                   duplicatesPrevented++;
               }
@@ -230,7 +273,7 @@ export default function AdminPage() {
           addedCount = toAdd.length;
           return [...prevData, ...toAdd].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       });
-      
+
       let toastDescription = `Importation de ${importedData.length} résultat(s) depuis ${source} terminée.`;
       toastDescription += ` ${addedCount} nouveau(x) résultat(s) ont été ajouté(s).`;
       if (duplicatesPrevented > 0) {
@@ -238,6 +281,8 @@ export default function AdminPage() {
       }
       toast({ title: "Importation Réussie", description: toastDescription });
 
+    } else {
+       toast({ title: `Importation depuis ${source}`, description: `Aucun nouveau résultat valide à importer depuis ${source}.`, variant: "default" });
     }
   };
 
@@ -257,7 +302,7 @@ export default function AdminPage() {
       if (fileInput) fileInput.value = '';
     });
   };
-  
+
   const handlePdfImportSubmit = async () => {
     if (!selectedPdfFile) return toast({ title: "Aucun fichier PDF", description: "Sélectionnez un fichier PDF.", variant: "destructive" });
     const formData = new FormData();
@@ -275,17 +320,35 @@ export default function AdminPage() {
     });
   };
 
+  const handleImageImportSubmit = async () => {
+    if (!selectedImageFile || !imagePreview) return toast({ title: "Aucune image", description: "Sélectionnez une image.", variant: "destructive" });
+    startImportTransition(async () => {
+      const result = await analyzeLotteryImageAction({ imageDataUri: imagePreview, drawNameFilter: importFilterDrawName === "all" ? null : importFilterDrawName });
+      if (result.success && result.extractedData) {
+        processImportedData(result.extractedData, "Image");
+        toast({ title: "Analyse d'Image Réussie", description: "Données extraites et potentiellement importées." });
+      } else {
+        toast({ title: "Erreur d'Analyse d'Image", description: result.error || "Impossible d'analyser l'image.", variant: "destructive" });
+      }
+      setSelectedImageFile(null);
+      setImagePreview(null);
+      const fileInput = document.getElementById('imageFile') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
+    });
+  };
 
-  const handleExportSubmit = async (format: 'json' | 'pdf') => {
+
+  const handleExportSubmit = async (formatType: 'json' | 'pdf' | 'image') => {
     startExportTransition(async () => {
       let result;
-      if (format === 'json') {
-        result = await exportLotteryDataToJson(adminData, exportFilterDrawName === "all" ? null : exportFilterDrawName);
+      const filter = exportFilterDrawName === "all" ? null : exportFilterDrawName;
+      if (formatType === 'json') {
+        result = await exportLotteryDataToJson(adminData, filter);
         if (result.success && result.jsonData) {
             const blob = new Blob([result.jsonData], { type: 'application/json' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
-            link.download = result.fileName || 'Lotocrack_export_admin.json'; 
+            link.download = result.fileName || 'Lotocrack_export_admin.json';
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -294,8 +357,8 @@ export default function AdminPage() {
         } else {
             toast({ title: "Erreur d'Exportation JSON", description: result.error, variant: "destructive" });
         }
-      } else if (format === 'pdf') {
-        result = await exportLotteryDataToPdf(adminData, exportFilterDrawName === "all" ? null : exportFilterDrawName);
+      } else if (formatType === 'pdf') {
+        result = await exportLotteryDataToPdf(adminData, filter);
         if (result.success && result.pdfBlob) {
             const link = document.createElement('a');
             link.href = URL.createObjectURL(result.pdfBlob);
@@ -308,6 +371,20 @@ export default function AdminPage() {
         } else {
             toast({ title: "Erreur d'Exportation PDF", description: result.error, variant: "destructive" });
         }
+      } else if (formatType === 'image') {
+        result = await exportLotteryDataToImage(adminData, filter);
+        if (result.success && result.imageDataUri) {
+            const link = document.createElement('a');
+            link.href = result.imageDataUri;
+            link.download = result.fileName || 'Lotocrack_export_admin.png';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            // No URL.revokeObjectURL for data URIs
+            toast({ title: "Exportation Image Réussie", description: "Fichier image téléchargé." });
+        } else {
+            toast({ title: "Erreur d'Exportation Image", description: result.error, variant: "destructive" });
+        }
       }
     });
   };
@@ -319,8 +396,7 @@ export default function AdminPage() {
         toast({ title: "Erreur", description: "Un résultat pour ce tirage à cette date existe déjà.", variant: "destructive"});
         return;
       }
-      
-      // Normalize machine numbers: if data.machine is [0,0,0,0,0], treat as empty []
+
       let machineNumbers = data.machine ? data.machine : [];
       if (machineNumbers.length === 5 && machineNumbers.every(n => n === 0)) {
         machineNumbers = [];
@@ -328,8 +404,8 @@ export default function AdminPage() {
 
       const actionResult = await addLotteryResultAction({
         ...data,
-        machine: machineNumbers, 
-      }); 
+        machine: machineNumbers,
+      });
       if (actionResult.success && actionResult.result) {
         setAdminData(prev => [...prev, { ...actionResult.result!, clientId: actionResult.result!.clientId || Date.now().toString(), machine: Array.isArray(actionResult.result!.machine) ? actionResult.result!.machine : [] }].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
         toast({ title: "Succès", description: actionResult.message });
@@ -340,7 +416,7 @@ export default function AdminPage() {
       }
     });
   };
-  
+
   const onEditSubmit: SubmitHandler<LotteryFormValues> = async (data) => {
     if (!editingResult) return;
     const conflictingResult = adminData.find(r => r.clientId !== editingResult.clientId && r.draw_name === data.draw_name && r.date === data.date);
@@ -349,15 +425,14 @@ export default function AdminPage() {
         return;
     }
     startProcessingTransition(async () => {
-       // Normalize machine numbers
       let machineNumbers = data.machine ? data.machine : [];
       if (machineNumbers.length === 5 && machineNumbers.every(n => n === 0)) {
         machineNumbers = [];
       }
       const actionResult = await updateLotteryResultAction(editingResult.clientId, {
         ...data,
-        machine: machineNumbers, 
-      }); 
+        machine: machineNumbers,
+      });
       if (actionResult.success && actionResult.result) {
         setAdminData(prev => prev.map(r => r.clientId === editingResult.clientId ? { ...r, ...actionResult.result!, clientId: editingResult.clientId, machine: Array.isArray(actionResult.result!.machine) ? actionResult.result!.machine : [] } : r).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
         toast({ title: "Succès", description: actionResult.message });
@@ -372,9 +447,9 @@ export default function AdminPage() {
 
   const openEditDialog = (resultToEdit: LotteryResultWithId) => {
     setEditingResult(resultToEdit);
-    reset({ 
+    reset({
       draw_name: resultToEdit.draw_name,
-      date: resultToEdit.date, 
+      date: resultToEdit.date,
       gagnants: resultToEdit.gagnants.map(Number),
       machine: Array.isArray(resultToEdit.machine) ? resultToEdit.machine.map(Number) : []
     });
@@ -389,7 +464,7 @@ export default function AdminPage() {
   const confirmDelete = async () => {
     if (!deletingResultClientId) return;
     startProcessingTransition(async () => {
-      const actionResult = await deleteLotteryResultAction(deletingResultClientId); 
+      const actionResult = await deleteLotteryResultAction(deletingResultClientId);
       if (actionResult.success) {
         setAdminData(prev => prev.filter(r => r.clientId !== deletingResultClientId));
         toast({ title: "Succès", description: actionResult.message });
@@ -401,18 +476,18 @@ export default function AdminPage() {
     });
   };
 
-  const handleResetCategoryClick = () => { 
-    if (!categoryToReset) { 
-        toast({title: "Aucune catégorie", description: "Veuillez sélectionner une catégorie à réinitialiser.", variant: "destructive"});
+  const handleResetCategoryClick = () => {
+    if (!categoryToReset || categoryToReset === "all") { // Prevent resetting "all"
+        toast({title: "Aucune catégorie valide", description: "Veuillez sélectionner une catégorie spécifique à réinitialiser.", variant: "destructive"});
         return;
     }
-    setIsResetCategoryDialogOpen(true); 
+    setIsResetCategoryDialogOpen(true);
   };
 
   const confirmResetCategory = async () => {
-    if (!categoryToReset) return;
+    if (!categoryToReset || categoryToReset === "all") return;
     startProcessingTransition(async () => {
-      const actionResult = await resetCategoryDataAction(categoryToReset); 
+      const actionResult = await resetCategoryDataAction(categoryToReset);
       if (actionResult.success) {
         setAdminData(prev => prev.filter(r => r.draw_name !== categoryToReset));
         toast({ title: "Succès", description: actionResult.message });
@@ -420,7 +495,7 @@ export default function AdminPage() {
         toast({ title: "Erreur", description: actionResult.error, variant: "destructive" });
       }
       setIsResetCategoryDialogOpen(false);
-      setCategoryToReset("");
+      // setCategoryToReset(""); // Keep selected category for now or reset to "all"
     });
   };
 
@@ -431,7 +506,7 @@ export default function AdminPage() {
     <div className="space-y-8 p-4 md:p-6 lg:p-8">
       <Card>
         <CardHeader>
-          <CardTitle className="text-3xl font-bold">Interface d'Administration Lotocrack</CardTitle> 
+          <CardTitle className="text-3xl font-bold">Interface d'Administration Lotocrack</CardTitle>
           <CardDescription>
             Gestion des données des tirages Loto Bonheur. Les modifications ici affectent les données stockées localement dans votre navigateur.
           </CardDescription>
@@ -455,7 +530,7 @@ export default function AdminPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
          {/* JSON Import/Export */}
         <Card>
             <CardHeader><CardTitle className="flex items-center"><FileJson className="mr-2"/>Importer/Exporter (JSON)</CardTitle></CardHeader>
@@ -531,17 +606,76 @@ export default function AdminPage() {
                 </Button>
             </CardContent>
         </Card>
+         {/* Image Import/Export */}
+        <Card>
+            <CardHeader><CardTitle className="flex items-center"><ImageIcon className="mr-2"/>Importer/Exporter (Image)</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+                <div>
+                    <Label htmlFor="imageFile">Importer une image de résultats</Label>
+                    <Input id="imageFile" type="file" accept="image/*" onChange={handleImageFileChange} className="mt-1" />
+                </div>
+                {imagePreview && (
+                    <div className="mt-2 border p-2 rounded-md">
+                        <Image src={imagePreview} alt="Aperçu" width={200} height={150} className="mx-auto object-contain" />
+                    </div>
+                )}
+                 <div className="mt-2">
+                    <Label htmlFor="importFilterDrawNameImage">Filtrer par catégorie (Optionnel pour l'analyse)</Label>
+                    <Select value={importFilterDrawName} onValueChange={setImportFilterDrawName}>
+                        <SelectTrigger id="importFilterDrawNameImage"><SelectValue placeholder="Sélectionner une catégorie" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Analyser pour toutes les catégories</SelectItem>
+                            {drawNames.map(name => <SelectItem key={`import-image-${name}`} value={name}>{name}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                </div>
+                <Button onClick={handleImageImportSubmit} disabled={isImporting || !selectedImageFile} className="w-full mt-2">
+                    {isImporting && selectedImageFile ? <Loader2 className="animate-spin mr-2" /> : <UploadCloud className="mr-2" />} Analyser et Importer Image
+                </Button>
+                <hr className="my-4"/>
+                <div>
+                    <Label htmlFor="exportFilterDrawNameImage">Exporter par catégorie (Optionnel)</Label>
+                     <Select value={exportFilterDrawName} onValueChange={setExportFilterDrawName}>
+                        <SelectTrigger id="exportFilterDrawNameImage"><SelectValue placeholder="Sélectionner une catégorie" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Toutes les catégories</SelectItem>
+                            {drawNames.map(name => <SelectItem key={`export-image-${name}`} value={name}>{name}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                </div>
+                <Button onClick={() => handleExportSubmit('image')} disabled={isExporting || adminData.length === 0} className="w-full mt-2">
+                {isExporting ? <Loader2 className="animate-spin mr-2" /> : <DownloadCloud className="mr-2" />} Exporter en Image
+                </Button>
+            </CardContent>
+        </Card>
       </div>
-      
+
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle className="flex items-center"><Eye className="mr-2 h-5 w-5" /> Visualiser et Gérer les Données</CardTitle>
             <CardDescription>Affichez ({filteredData.length}), modifiez ou supprimez les résultats.</CardDescription>
           </div>
-          <Button onClick={() => { reset({ draw_name: drawNames.length > 0 ? drawNames[0] : "", date: format(new Date(), 'yyyy-MM-dd'), gagnants: [], machine: [] }); setIsAddDialogOpen(true); }}>
-            <PlusCircle className="mr-2 h-4 w-4" /> Ajouter un Résultat
-          </Button>
+          <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+            <DialogTrigger asChild>
+                <Button onClick={() => { reset({ draw_name: drawNames.length > 0 ? drawNames[0] : "", date: format(new Date(), 'yyyy-MM-dd'), gagnants: [], machine: [] }); setIsAddDialogOpen(true); }}>
+                    <PlusCircle className="mr-2 h-4 w-4" /> Ajouter un Résultat
+                </Button>
+            </DialogTrigger>
+            <DialogContent>
+                <DialogHeader><DialogTitle>Ajouter un Nouveau Résultat</DialogTitle></DialogHeader>
+                <form onSubmit={handleSubmit(onAddSubmit)} className="space-y-4">
+                    <FormItemField control={control} name="draw_name" label="Nom du Tirage" drawNames={drawNames} errors={errors} />
+                    <FormItemField control={control} name="date" label="Date" type="date" register={register} errors={errors} />
+                    <FormItemNumberArray control={control} name="gagnants" label="Numéros Gagnants (séparés par virgule/espace)" placeholder="1,2,3,4,5" errors={errors} />
+                    <FormItemNumberArray control={control} name="machine" label="Numéros Machine (Optionnel: vide, ou cinq '0', ou 5 numéros)" placeholder="Ex: 6,7,8,9,10 ou laisser vide" errors={errors} />
+                    <DialogFooter>
+                        <DialogClose asChild><Button type="button" variant="outline">Annuler</Button></DialogClose>
+                        <Button type="submit" disabled={isProcessing}>{isProcessing ? <Loader2 className="animate-spin"/> : "Ajouter"}</Button>
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+          </Dialog>
         </CardHeader>
         <CardContent>
           <div className="mb-4">
@@ -554,7 +688,7 @@ export default function AdminPage() {
               </SelectContent>
             </Select>
           </div>
-          {isLoadingData ? <div className="flex justify-center py-10"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div> : 
+          {isLoadingData ? <div className="flex justify-center py-10"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div> :
             filteredData.length === 0 ? (
               <div className="text-center py-10 text-muted-foreground">
                 <Info className="mx-auto h-12 w-12 mb-4" />
@@ -593,7 +727,7 @@ export default function AdminPage() {
         <CardFooter>
             <Button onClick={fetchAndInitializeAdminData} variant="outline" disabled={isLoadingData}>
                 <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingData ? 'animate-spin' : ''}`} />
-                Recharger les Données (Écrase les données locales si API prioritaire)
+                Recharger les Données de l'API (Écrase les données locales)
             </Button>
         </CardFooter>
       </Card>
@@ -613,11 +747,12 @@ export default function AdminPage() {
                       </Select>
                   </div>
                   <AlertDialogTrigger asChild>
-                      <Button variant="destructive" disabled={!categoryToReset || isProcessing} onClick={handleResetCategoryClick}>
+                      <Button variant="destructive" disabled={!categoryToReset || categoryToReset === "all" || isProcessing} onClick={handleResetCategoryClick}>
                             {isProcessing && categoryToReset ? <Loader2 className="animate-spin mr-2 h-4 w-4"/> : <Trash2 className="mr-2 h-4 w-4" />} Réinitialiser la Catégorie
                       </Button>
                   </AlertDialogTrigger>
               </div>
+               <p className="text-xs text-muted-foreground">Attention: La sélection "Toutes les catégories" ne peut pas être réinitialisée ici. Choisissez une catégorie spécifique.</p>
           </CardContent>
         </Card>
         <AlertDialogContent>
@@ -634,135 +769,16 @@ export default function AdminPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Add Result Dialog */}
-      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Ajouter un Nouveau Résultat</DialogTitle></DialogHeader>
-          <form onSubmit={handleSubmit(onAddSubmit)} className="space-y-4">
-            <div>
-              <Label htmlFor="add_draw_name">Nom du Tirage</Label>
-              <Controller
-                name="draw_name"
-                control={control}
-                render={({ field }) => (
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
-                    <SelectTrigger id="add_draw_name"><SelectValue placeholder="Sélectionner tirage" /></SelectTrigger>
-                    <SelectContent>{drawNames.map(name => <SelectItem key={`add-select-${name}`} value={name}>{name}</SelectItem>)}</SelectContent>
-                  </Select>
-                )}
-              />
-              {errors.draw_name?.message && <p className="text-destructive text-sm">{errors.draw_name.message}</p>}
-            </div>
-            <div>
-              <Label htmlFor="add_date">Date</Label>
-              <Input id="add_date" type="date" {...register("date")} />
-              {errors.date?.message && <p className="text-destructive text-sm">{errors.date.message}</p>}
-            </div>
-            <div>
-              <Label htmlFor="add_gagnants">Numéros Gagnants (séparés par virgule/espace)</Label>
-              <Controller
-                name="gagnants"
-                control={control}
-                render={({ field }) => (
-                  <NumberArrayInput
-                    id="add_gagnants"
-                    placeholder="1,2,3,4,5"
-                    value={field.value}
-                    onChange={field.onChange}
-                    onBlur={field.onBlur}
-                    aria-label="Numéros Gagnants"
-                  />
-                )}
-              />
-              {errors.gagnants?.message && <p className="text-destructive text-sm">{errors.gagnants.message}</p>}
-            </div>
-             <div>
-              <Label htmlFor="add_machine">Numéros Machine (Optionnel: vide, ou cinq '0', ou 5 numéros)</Label>
-               <Controller
-                name="machine"
-                control={control}
-                render={({ field }) => (
-                  <NumberArrayInput
-                    id="add_machine"
-                    placeholder="Ex: 6,7,8,9,10 ou 0,0,0,0,0 ou laisser vide"
-                    value={field.value}
-                    onChange={field.onChange}
-                    onBlur={field.onBlur}
-                    aria-label="Numéros Machine"
-                  />
-                )}
-              />
-              {errors.machine?.message && <p className="text-destructive text-sm">{errors.machine.message}</p>}
-            </div>
-            <DialogFooter>
-                <DialogClose asChild><Button type="button" variant="outline">Annuler</Button></DialogClose>
-                <Button type="submit" disabled={isProcessing}>{isProcessing ? <Loader2 className="animate-spin"/> : "Ajouter"}</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
       {/* Edit Result Dialog */}
        <Dialog open={isEditDialogOpen} onOpenChange={(open) => { setIsEditDialogOpen(open); if (!open) setEditingResult(null); }}>
         <DialogContent>
           <DialogHeader><DialogTitle>Modifier le Résultat</DialogTitle></DialogHeader>
           {editingResult && (
             <form onSubmit={handleSubmit(onEditSubmit)} className="space-y-4">
-               <div>
-                <Label htmlFor="edit_draw_name">Nom du Tirage</Label>
-                <Controller
-                    name="draw_name"
-                    control={control}
-                    render={({ field }) => (
-                    <Select onValueChange={field.onChange} value={field.value}>
-                        <SelectTrigger id="edit_draw_name"><SelectValue placeholder="Sélectionner tirage" /></SelectTrigger>
-                        <SelectContent>{drawNames.map(name => <SelectItem key={`edit-select-${name}`} value={name}>{name}</SelectItem>)}</SelectContent>
-                    </Select>
-                    )}
-                />
-                {errors.draw_name?.message && <p className="text-destructive text-sm">{errors.draw_name.message}</p>}
-              </div>
-              <div>
-                <Label htmlFor="edit_date">Date</Label>
-                <Input id="edit_date" type="date" {...register("date")} />
-                {errors.date?.message && <p className="text-destructive text-sm">{errors.date.message}</p>}
-              </div>
-              <div>
-                <Label htmlFor="edit_gagnants">Numéros Gagnants (séparés par virgule/espace)</Label>
-                 <Controller
-                    name="gagnants"
-                    control={control}
-                    render={({ field }) => (
-                      <NumberArrayInput
-                        id="edit_gagnants"
-                        placeholder="1,2,3,4,5"
-                        value={field.value}
-                        onChange={field.onChange}
-                        onBlur={field.onBlur}
-                        aria-label="Numéros Gagnants (modifier)"
-                      />
-                    )}
-                />
-                {errors.gagnants?.message && <p className="text-destructive text-sm">{errors.gagnants.message}</p>}
-              </div>
-              <div>
-                <Label htmlFor="edit_machine">Numéros Machine (Optionnel: vide, ou cinq '0', ou 5 numéros)</Label>
-                <Controller
-                    name="machine"
-                    control={control}
-                    render={({ field }) => (
-                      <NumberArrayInput
-                        id="edit_machine"
-                        placeholder="Ex: 6,7,8,9,10 ou 0,0,0,0,0 ou laisser vide"
-                        value={field.value}
-                        onChange={field.onChange}
-                        onBlur={field.onBlur}
-                        aria-label="Numéros Machine (modifier)"
-                      />
-                    )}
-                />
-                {errors.machine?.message && <p className="text-destructive text-sm">{errors.machine.message}</p>}
-              </div>
+                <FormItemField control={control} name="draw_name" label="Nom du Tirage" drawNames={drawNames} errors={errors} disabled={true} />
+                <FormItemField control={control} name="date" label="Date" type="date" register={register} errors={errors} disabled={true}/>
+                <FormItemNumberArray control={control} name="gagnants" label="Numéros Gagnants (séparés par virgule/espace)" placeholder="1,2,3,4,5" errors={errors} />
+                <FormItemNumberArray control={control} name="machine" label="Numéros Machine (Optionnel: vide, ou cinq '0', ou 5 numéros)" placeholder="Ex: 6,7,8,9,10 ou laisser vide" errors={errors} />
               <DialogFooter>
                 <DialogClose asChild><Button type="button" variant="outline" onClick={() => {setIsEditDialogOpen(false); setEditingResult(null);}}>Annuler</Button></DialogClose>
                 <Button type="submit" disabled={isProcessing}>{isProcessing ? <Loader2 className="animate-spin"/> : "Sauvegarder"}</Button>
@@ -785,8 +801,73 @@ export default function AdminPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      
+
     </div>
   );
 }
+
+
+// Helper components for form fields to reduce repetition
+interface FormItemFieldProps {
+    control: any;
+    name: keyof LotteryFormValues;
+    label: string;
+    drawNames?: string[];
+    type?: string;
+    register?: any;
+    errors: any;
+    disabled?: boolean;
+}
+
+const FormItemField: React.FC<FormItemFieldProps> = ({ control, name, label, drawNames, type, register, errors, disabled }) => (
+    <div>
+        <Label htmlFor={name.toString()}>{label}</Label>
+        {type === 'date' ? (
+            <Input id={name.toString()} type="date" {...register(name)} disabled={disabled} />
+        ) : drawNames ? (
+            <Controller
+                name={name as any}
+                control={control}
+                render={({ field }) => (
+                    <Select onValueChange={field.onChange} value={field.value} disabled={disabled}>
+                        <SelectTrigger id={name.toString()}><SelectValue placeholder="Sélectionner tirage" /></SelectTrigger>
+                        <SelectContent>{drawNames.map(dn => <SelectItem key={`select-${name}-${dn}`} value={dn}>{dn}</SelectItem>)}</SelectContent>
+                    </Select>
+                )}
+            />
+        ) : null}
+        {errors[name]?.message && <p className="text-destructive text-sm">{errors[name].message as string}</p>}
+    </div>
+);
+
+interface FormItemNumberArrayProps {
+    control: any;
+    name: keyof LotteryFormValues;
+    label: string;
+    placeholder: string;
+    errors: any;
+    disabled?: boolean;
+}
+
+const FormItemNumberArray: React.FC<FormItemNumberArrayProps> = ({ control, name, label, placeholder, errors, disabled }) => (
+    <div>
+        <Label htmlFor={name.toString()}>{label}</Label>
+        <Controller
+            name={name as any}
+            control={control}
+            render={({ field }) => (
+                <NumberArrayInput
+                    id={name.toString()}
+                    placeholder={placeholder}
+                    value={field.value}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    aria-label={label}
+                    disabled={disabled}
+                />
+            )}
+        />
+        {errors[name]?.message && <p className="text-destructive text-sm">{errors[name].message as string}</p>}
+    </div>
+);
 

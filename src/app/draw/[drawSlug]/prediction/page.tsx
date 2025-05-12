@@ -16,14 +16,14 @@ import { Lightbulb, ShieldCheck, Wand2, Info, Brain, CheckCircle, BarChartHorizo
 
 function PredictionCard({ prediction, isRecommended = false }: { prediction: SinglePrediction, isRecommended?: boolean }) {
   return (
-    <Card className={`shadow-lg ${isRecommended ? 'border-primary ring-2 ring-primary' : ''}`}>
+    <Card className={`shadow-lg ${isRecommended ? 'border-primary ring-2 ring-primary' : 'border-border'}`}>
       <CardHeader>
         <CardTitle className="text-xl flex items-center">
           {isRecommended ? <CheckCircle className="h-6 w-6 mr-2 text-primary" /> : <Brain className="h-6 w-6 mr-2 text-muted-foreground" />}
           {prediction.methodName}
         </CardTitle>
         <CardDescription>Confiance: <Badge variant={
-            prediction.confidence === "Élevée" ? "default" : 
+            prediction.confidence === "Élevée" ? "default" :
             prediction.confidence === "Moyenne" ? "secondary" :
             prediction.confidence === "Faible" ? "outline" :
             "destructive" // Très faible
@@ -35,7 +35,7 @@ function PredictionCard({ prediction, isRecommended = false }: { prediction: Sin
           <h4 className="text-md font-semibold text-muted-foreground mb-2">Numéros Suggérés:</h4>
           <div className="flex flex-wrap gap-2 justify-center">
             {prediction.predictedNumbers.map((num, index) => (
-              <Badge key={`${prediction.methodName}-num-${index}`} 
+              <Badge key={`${prediction.methodName}-num-${index}-${num}`}
                      className={`text-xl px-3 py-1 rounded-md shadow-sm ${isRecommended ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground'}`}>
                 {num}
               </Badge>
@@ -72,8 +72,18 @@ export default function PredictionPage() {
     try {
       const response = await fetch('/api/results');
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Erreur HTTP: ${response.status}`);
+        let errorMsg = `Erreur HTTP: ${response.status} ${response.statusText}`;
+        try {
+          const errorData = await response.json();
+          errorMsg = errorData.error || errorMsg;
+        } catch (e) {
+           try {
+            const errorText = await response.text();
+            console.error("Server error response (text) for prediction data:", errorText);
+            if (errorText && errorText.length < 200) errorMsg += ` - ${errorText.substring(0,100)}`;
+          } catch (textErr) { /* Do nothing */ }
+        }
+        throw new Error(errorMsg);
       }
       const data: LotteryResult[] = await response.json();
       setAllResults(data);
@@ -94,16 +104,23 @@ export default function PredictionPage() {
         setError("Le nom du tirage n'est pas défini. Impossible de générer une prédiction.");
         return;
     }
+    if (allResults.length === 0 && !isLoadingData) {
+        // Allow generating predictions even with no historical data (flow handles this with random)
+        // but inform the user.
+        toast({
+            title: "Peu de données historiques",
+            description: `Aucune donnée historique pour "${drawName}". Les prédictions seront aléatoires et peu fiables.`,
+            variant: "default"
+        });
+    }
+
 
     setError(null);
     setIsLoadingPrediction(true);
     setPredictionOutput(null);
 
-    // The generateLotteryPrediction flow can handle empty `results` by generating random ones.
-    // It already filters by drawName internally if results are passed.
-    // For consistency with flow input, we pass all results for the category.
     const filteredResults = allResults.filter(result => result.draw_name === drawName);
-    
+
     try {
       const predOutput = await generateLotteryPrediction({ results: filteredResults, drawName });
       setPredictionOutput(predOutput);
@@ -114,10 +131,11 @@ export default function PredictionPage() {
       setIsLoadingPrediction(false);
     }
 
-  }, [allResults, drawName]);
-  
+  }, [allResults, drawName, isLoadingData]); // Added toast
+
+  // Auto-generate prediction when data is loaded and drawName is set, but only if no prediction exists yet
   useEffect(() => {
-    if (!isLoadingData && drawName && !predictionOutput && !isLoadingPrediction && !error) {
+    if (!isLoadingData && drawName && allResults && !predictionOutput && !isLoadingPrediction && !error) {
        handleGeneratePrediction();
     }
   }, [isLoadingData, drawName, allResults, predictionOutput, isLoadingPrediction, error, handleGeneratePrediction]);
@@ -145,15 +163,15 @@ export default function PredictionPage() {
       </Alert>
 
       <div className="flex justify-center my-6">
-        <Button onClick={handleGeneratePrediction} disabled={isLoadingData || isLoadingPrediction} size="lg" className="px-8 py-6 text-lg">
+        <Button onClick={handleGeneratePrediction} disabled={isLoadingData || isLoadingPrediction || !drawName} size="lg" className="px-8 py-6 text-lg">
           <Wand2 className="mr-3 h-6 w-6" />
-          {predictionOutput ? 'Rafraîchir les Prédictions' : 'Générer les Prédictions'}
+          {isLoadingPrediction ? 'Génération en cours...' : (predictionOutput ? 'Rafraîchir les Prédictions' : 'Générer les Prédictions')}
         </Button>
       </div>
-      
-      {isLoadingData && <div className="pt-4"><LoadingSpinner /></div>}
+
+      {isLoadingData && <div className="pt-4"><LoadingSpinner message="Chargement des données historiques..." /></div>}
       {error && <ErrorMessage message={error} />}
-      {isLoadingPrediction && <div className="pt-4"><LoadingSpinner /></div>}
+      {isLoadingPrediction && <div className="pt-4"><LoadingSpinner message="Génération des prédictions IA..." /></div>}
 
       {predictionOutput && !isLoadingPrediction && (
         <div className="space-y-8">
@@ -164,32 +182,32 @@ export default function PredictionPage() {
                 <CardTitle className="text-3xl">Prédiction Recommandée</CardTitle>
                </div>
               <CardDescription className="text-md">
-                Pour le tirage: <span className="font-bold">{predictionOutput.drawName}</span> | 
+                Pour le tirage: <span className="font-bold">{predictionOutput.drawName}</span> |
                 Basé sur {predictionOutput.dataSummary.totalDrawsAnalyzed} tirages analysés.
               </CardDescription>
             </CardHeader>
             <CardContent className="pt-6">
               <PredictionCard prediction={predictionOutput.recommendedPrediction} isRecommended={true} />
             </CardContent>
-             <CardFooter className="text-xs text-muted-foreground justify-center">
-                La prédiction recommandée combine les résultats de plusieurs méthodes d'analyse.
+             <CardFooter className="text-xs text-muted-foreground justify-center text-center">
+                La prédiction recommandée combine les résultats de plusieurs méthodes d'analyse. Une confiance plus élevée indique un accord plus fort entre les méthodes.
             </CardFooter>
           </Card>
 
-          <Accordion type="single" collapsible className="w-full">
+          <Accordion type="single" collapsible className="w-full" defaultValue="all-methods">
             <AccordionItem value="all-methods">
-              <AccordionTrigger className="text-2xl font-semibold hover:no-underline">
+              <AccordionTrigger className="text-2xl font-semibold hover:no-underline text-left">
                 <BarChartHorizontalBig className="mr-3 h-6 w-6 text-muted-foreground" />
                 Détail des autres méthodes de prédiction
               </AccordionTrigger>
               <AccordionContent className="pt-4 space-y-6">
                 {predictionOutput.allPredictions
-                  .filter(p => p.methodName !== predictionOutput.recommendedPrediction.methodName) // Exclude recommended if it's also in allPredictions with same name
+                  .filter(p => p.methodName !== predictionOutput.recommendedPrediction.methodName)
                   .map((pred, index) => (
-                    <PredictionCard key={index} prediction={pred} />
+                    <PredictionCard key={`${pred.methodName}-${index}`} prediction={pred} />
                 ))}
                  {predictionOutput.allPredictions.filter(p => p.methodName !== predictionOutput.recommendedPrediction.methodName).length === 0 && (
-                    <p className="text-muted-foreground text-center py-4">La prédiction recommandée est la seule disponible pour ce tirage.</p>
+                    <p className="text-muted-foreground text-center py-4">La prédiction recommandée est la seule disponible actuellement ou toutes les méthodes ont convergé vers la même recommandation.</p>
                 )}
               </AccordionContent>
             </AccordionItem>
@@ -197,18 +215,24 @@ export default function PredictionPage() {
 
         </div>
       )}
-      
+
       {!isLoadingData && !isLoadingPrediction && !predictionOutput && !error && drawName && (
          <Alert>
             <Info className="h-4 w-4" />
             <AlertTitle>En attente de génération</AlertTitle>
             <AlertDescription>
-            Cliquez sur "Générer les Prédictions" pour démarrer l'analyse. 
-            Si aucune donnée historique n'est disponible pour "{drawName}", les prédictions seront aléatoires.
+            Cliquez sur "Générer les Prédictions" pour démarrer l'analyse.
+            Si aucune donnée historique n'est disponible pour "{drawName}", les prédictions seront basées sur des méthodes aléatoires ou par défaut.
             </AlertDescription>
         </Alert>
       )}
-
+       {/* Placeholder for toast hook, if needed directly on this page */}
     </div>
   );
 }
+
+// Helper function for toast, can be moved to a shared utility if used elsewhere
+import { toast as useToastHook } from "@/hooks/use-toast"; // Assuming toast hook is set up
+const toast = (options: { title: string, description: string, variant?: "default" | "destructive" }) => {
+  useToastHook().toast(options);
+};

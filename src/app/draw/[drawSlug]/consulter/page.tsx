@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Info, Search, Lightbulb } from "lucide-react"; // Added Lightbulb
+import { Info, Search, Lightbulb } from "lucide-react";
 
 interface ChartData {
   name: string;
@@ -46,8 +46,18 @@ export default function ConsulterPage() {
     try {
       const response = await fetch('/api/results');
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Erreur HTTP: ${response.status}`);
+        let errorMsg = `Erreur HTTP: ${response.status} ${response.statusText}`;
+        try {
+          const errorData = await response.json();
+          errorMsg = errorData.error || errorMsg;
+        } catch (e) {
+           try {
+            const errorText = await response.text();
+            console.error("Server error response (text) for consultant data:", errorText);
+            if (errorText && errorText.length < 200) errorMsg += ` - ${errorText.substring(0,100)}`;
+          } catch (textErr) { /* Do nothing */ }
+        }
+        throw new Error(errorMsg);
       }
       const data: LotteryResult[] = await response.json();
       setAllResults(data);
@@ -65,7 +75,7 @@ export default function ConsulterPage() {
 
   const handleAnalysisSubmit = useCallback(async () => {
     const num = parseInt(targetNumberInput);
-    if (isNaN(num) || num < 1 || num > 90) { 
+    if (isNaN(num) || num < 1 || num > 90) {
       setError("Veuillez entrer un numéro valide (1-90).");
       return;
     }
@@ -76,25 +86,31 @@ export default function ConsulterPage() {
       const filteredResults = allResults.filter(result => result.draw_name === drawName);
       if (filteredResults.length > 0) {
         setIsLoadingAnalysis(true);
-        setAnalysis(null); 
-        analyzeNumberRegularity({ results: filteredResults, targetNumber: num, drawName })
-          .then(setAnalysis)
-          .catch(err => {
+        setAnalysis(null);
+        try {
+            const analysisResult = await analyzeNumberRegularity({ results: filteredResults, targetNumber: num, drawName });
+            setAnalysis(analysisResult);
+        } catch (err: any) {
             setError(`Erreur lors de l'analyse: ${err.message}`);
             console.error(err);
-          })
-          .finally(() => setIsLoadingAnalysis(false));
+        } finally {
+            setIsLoadingAnalysis(false);
+        }
       } else {
          setError(`Aucune donnée de résultat trouvée pour "${drawName}" pour effectuer l'analyse.`);
       }
+    } else if (!drawName) {
+      setError("Le nom du tirage n'est pas défini.");
+    } else {
+      setError("Les données de base des résultats ne sont pas chargées.");
     }
   }, [targetNumberInput, allResults, drawName]);
-  
+
   const renderFrequencyChart = (data: Record<string, number>, title: string) => {
     const chartData: ChartData[] = Object.entries(data)
       .map(([name, frequency]) => ({ name, frequency }))
       .sort((a, b) => b.frequency - a.frequency)
-      .slice(0, 15); 
+      .slice(0, 15);
 
     if (chartData.length === 0) return <p className="text-muted-foreground mt-2">Aucune donnée de fréquence pertinente.</p>;
 
@@ -123,7 +139,7 @@ export default function ConsulterPage() {
       <h4 className="text-md font-semibold mb-1">{title} (Top 5)</h4>
       {numbers.length > 0 ? (
         <div className="flex flex-wrap gap-1">
-          {numbers.map(num => <Badge key={num} variant="outline">{num}</Badge>)}
+          {numbers.map(num => <Badge key={`${title}-${num}`} variant="outline">{num}</Badge>)}
         </div>
       ) : (
         <p className="text-xs text-muted-foreground">N/A</p>
@@ -161,18 +177,18 @@ export default function ConsulterPage() {
                 className="mt-1"
               />
             </div>
-            <Button onClick={handleAnalysisSubmit} disabled={isLoadingData || isLoadingAnalysis || !targetNumberInput}>
+            <Button onClick={handleAnalysisSubmit} disabled={isLoadingData || isLoadingAnalysis || !targetNumberInput || !drawName || allResults.length === 0}>
               <Search className="mr-2 h-4 w-4" />
               Analyser
             </Button>
           </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && <p className="text-sm text-destructive mt-2">{error}</p>}
         </CardContent>
       </Card>
 
       {isLoadingData && <LoadingSpinner />}
-      
-      {!isLoadingData && allResults.length === 0 && !error && (
+
+      {!isLoadingData && allResults.length === 0 && !error && drawName && (
          <Alert>
             <Info className="h-4 w-4" />
             <AlertTitle>Données de Base Manquantes</AlertTitle>
@@ -202,7 +218,7 @@ export default function ConsulterPage() {
                     <AlertDescription>{analysis.analysisSummary}</AlertDescription>
                 </Alert>
             )}
-            
+
             {analysis.totalDrawsWithTarget > 0 ? (
               <>
                 <div>
