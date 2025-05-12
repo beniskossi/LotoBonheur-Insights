@@ -9,6 +9,8 @@ import { jsPDF } from 'jspdf';
 import 'jspdf-autotable'; // Augments jsPDF
 // import pdfParse from 'pdf-parse'; // Removed top-level static import
 import { fr } from 'date-fns/locale';
+import { analyzeLotteryImage, type LotteryImageAnalysisInput, type LotteryImageAnalysisOutput } from '@/ai/flows/image-analysis-flow';
+import { exportToImage } from '@/lib/image-export';
 
 
 // Schema for validating a single lottery result within the JSON
@@ -143,7 +145,7 @@ export async function exportLotteryDataToJson(
       machine: Array.isArray(rest.machine) && rest.machine.length > 0 ? rest.machine : [] // Ensure exported machine is [] if empty/null
     })), null, 2); // Remove clientId for export
     const currentDate = format(new Date(), 'yyyyMMdd_HHmmss');
-    const fileName = `Lotocrack_Export_Admin_${filterDrawName && filterDrawName !== "all" ? filterDrawName.replace(/\s+/g, '_') : 'Tous'}_${currentDate}.json`;
+    const fileName = `LotoBonheurInsights_Export_Admin_${filterDrawName && filterDrawName !== "all" ? filterDrawName.replace(/\s+/g, '_') : 'Tous'}_${currentDate}.json`;
 
     return { success: true, jsonData: jsonString, fileName };
 
@@ -294,12 +296,6 @@ export async function importLotteryDataFromPdf(
               machine: machine, // machine is already normalized or empty
               clientId: `${currentDrawName}-${currentDate}-${Math.random().toString(36).substring(2, 9)}`
             });
-            // Reset currentDrawName and currentDate after successfully parsing a full result set for them
-            // to avoid reusing the same date for subsequent non-Gagnant lines under a new draw name.
-            // However, if the PDF structure groups multiple Gagnant/Machine lines under one Draw/Date header,
-            // this reset might be too aggressive. For now, assume one result set per Draw/Date header.
-            // currentDrawName = null;
-            // currentDate = null; 
           }
         }
       }
@@ -351,7 +347,7 @@ export async function exportLotteryDataToPdf(
     });
 
     doc.setFontSize(16);
-    doc.text(`Lotocrack - Résultats de Loterie`, 14, 20);
+    doc.text(`LotoBonheur Insights - Résultats de Loterie`, 14, 20);
     doc.setFontSize(12);
     doc.text(`Catégorie: ${filterDrawName && filterDrawName !== "all" ? filterDrawName : 'Toutes les catégories'}`, 14, 28);
     doc.setFontSize(10);
@@ -377,14 +373,14 @@ export async function exportLotteryDataToPdf(
         body: tableRows,
         startY: 50, 
         theme: 'striped', // 'striped', 'grid', 'plain'
-        headStyles: { fillColor: [22, 160, 133] }, // Teal like color for header
+        headStyles: { fillColor: [45, 100, 50] }, // Gold like color for header (using HSL for accent)
         styles: { font: "helvetica", fontSize: 9, cellPadding: 2 },
-        alternateRowStyles: { fillColor: [245, 245, 245] }, // Light gray for alternate rows
+        alternateRowStyles: { fillColor: [220, 20, 15] }, // Darker Gray for alternate rows (using HSL for muted)
     });
     
     const pdfBlob = doc.output('blob');
     const currentDate = format(new Date(), 'yyyyMMdd_HHmmss');
-    const fileName = `Lotocrack_Export_${filterDrawName && filterDrawName !== "all" ? filterDrawName.replace(/\s+/g, '_') : 'Tous'}_${currentDate}.pdf`;
+    const fileName = `LotoBonheurInsights_Export_${filterDrawName && filterDrawName !== "all" ? filterDrawName.replace(/\s+/g, '_') : 'Tous'}_${currentDate}.pdf`;
 
     return { success: true, pdfBlob, fileName };
 
@@ -394,3 +390,43 @@ export async function exportLotteryDataToPdf(
   }
 }
 
+
+export async function analyzeLotteryImageAction(
+  input: LotteryImageAnalysisInput
+): Promise<LotteryImageAnalysisOutput & { success: boolean; error?: string }> {
+  try {
+    const result = await analyzeLotteryImage(input);
+    return { ...result, success: true };
+  } catch (error: any) {
+    console.error('Error analyzing lottery image in action:', error);
+    return {
+      success: false,
+      error: `Erreur lors de l'analyse de l'image: ${error.message || 'Erreur inconnue du serveur.'}`,
+      extractedData: [],
+      analysisSummary: `Échec de l'analyse: ${error.message || 'Erreur inconnue.'}`
+    };
+  }
+}
+
+export async function exportLotteryDataToImage(
+  allResults: LotteryResult[],
+  filterDrawName?: string | null
+): Promise<{ success: boolean; imageDataUri?: string; fileName?: string; error?: string }> {
+  const resultsToExport = (filterDrawName && filterDrawName !== "all")
+    ? allResults.filter(r => r.draw_name === filterDrawName)
+    : allResults;
+
+  if (!resultsToExport || resultsToExport.length === 0) {
+    return { success: false, error: 'Aucune donnée à exporter (après application du filtre).' };
+  }
+  
+  try {
+    const imageDataUri = await exportToImage(resultsToExport, filterDrawName);
+    const currentDate = format(new Date(), 'yyyyMMdd_HHmmss');
+    const fileName = `LotoBonheurInsights_Export_${filterDrawName && filterDrawName !== "all" ? filterDrawName.replace(/\s+/g, '_') : 'Tous'}_${currentDate}.png`;
+    return { success: true, imageDataUri, fileName };
+  } catch (error: any) {
+    console.error('Error exporting to image:', error);
+    return { success: false, error: `Erreur lors de l'exportation en image: ${error.message}` };
+  }
+}
