@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AlertTriangle, UploadCloud, DownloadCloud, Loader2, PlusCircle, Edit, Trash2, RefreshCw, Eye, ShieldAlert, Info, Filter, FileJson, FileText, Image as ImageIcon } from "lucide-react";
+import { AlertTriangle, UploadCloud, DownloadCloud, Loader2, PlusCircle, Edit, Trash2, RefreshCw, Eye, ShieldAlert, Info, Filter, FileJson } from "lucide-react"; // Removed FileText, ImageIcon
 import { useState, useTransition, useEffect, useCallback } from "react";
 import { useForm, Controller, SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -23,19 +23,17 @@ import {
   updateLotteryResultAction,
   deleteLotteryResultAction,
   resetCategoryDataAction,
-  importLotteryDataFromPdf,
-  exportLotteryDataToPdf,
-  analyzeLotteryImageAction,
-  exportLotteryDataToImage
+  // analyzeLotteryImageAction, // Removed
+  // exportLotteryDataToImage // Removed
 } from "./actions";
 import { getUniqueDrawNames } from "@/config/draw-schedule";
 import { format, parseISO, isValid, parse as dateParse } from 'date-fns';
 import { useSidebar } from '@/components/ui/sidebar';
-import Image from "next/image";
+// import Image from "next/image"; // Removed as image preview is gone
 
 
 type LotteryResultWithId = LotteryResult & { clientId: string };
-const ADMIN_DATA_STORAGE_KEY = 'lotocrackAdminData'; // Changed key to be more specific
+const ADMIN_DATA_STORAGE_KEY = 'lotocrackAdminData';
 
 const lotteryResultSchema = z.object({
   draw_name: z.string().min(1, "Le nom du tirage est requis."),
@@ -76,7 +74,6 @@ const NumberArrayInput: React.FC<NumberArrayInputProps> = ({ value: rhfValue, on
   const [inputValue, setInputValue] = useState(Array.isArray(rhfValue) ? rhfValue.join(',') : '');
 
   useEffect(() => {
-    // Ensure that if rhfValue is undefined or not an array, inputValue is an empty string
     setInputValue(Array.isArray(rhfValue) ? rhfValue.join(',') : '');
   }, [rhfValue]);
 
@@ -84,7 +81,7 @@ const NumberArrayInput: React.FC<NumberArrayInputProps> = ({ value: rhfValue, on
     if (!str.trim()) return [];
     return str.split(/[,;\s]+/)
               .map(s => s.trim())
-              .filter(s => s.length > 0) // Filter out empty strings resulting from multiple separators
+              .filter(s => s.length > 0) 
               .map(s => parseInt(s, 10))
               .filter(n => !isNaN(n) && n >= 0 && n <= 90);
   };
@@ -92,15 +89,12 @@ const NumberArrayInput: React.FC<NumberArrayInputProps> = ({ value: rhfValue, on
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawValue = e.target.value;
     setInputValue(rawValue);
-    // Only call RHF onChange with parsed numbers if the input is valid-ish or empty
-    // This prevents premature validation errors if user is typing "1,"
     if (/^[\d,\s]*$/.test(rawValue)) {
         rhfOnChange(parseNumbersString(rawValue));
     }
   };
 
   const handleInputBlur = () => {
-    // Final parsing and update on blur to ensure RHF has the cleaned array
     rhfOnChange(parseNumbersString(inputValue));
     rhfOnBlur();
   };
@@ -130,9 +124,9 @@ export default function AdminPage() {
   const [initialLoadMessage, setInitialLoadMessage] = useState<string | null>(null);
 
   const [selectedJsonFile, setSelectedJsonFile] = useState<File | null>(null);
-  const [selectedPdfFile, setSelectedPdfFile] = useState<File | null>(null);
-  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  // const [selectedPdfFile, setSelectedPdfFile] = useState<File | null>(null); // Removed
+  // const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null); // Removed
+  // const [imagePreview, setImagePreview] = useState<string | null>(null); // Removed
 
 
   const [viewCategory, setViewCategory] = useState<string>("all");
@@ -231,24 +225,8 @@ export default function AdminPage() {
     setSelectedJsonFile(event.target.files?.[0] || null);
   };
 
-  const handlePdfFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSelectedPdfFile(event.target.files?.[0] || null);
-  };
-
-  const handleImageFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0] || null;
-    setSelectedImageFile(file);
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    } else {
-      setImagePreview(null);
-    }
-  };
-
+  // Removed: handlePdfFileChange
+  // Removed: handleImageFileChange
 
   const processImportedData = (importedData: LotteryResult[] | undefined, source: string) => {
     if (importedData && importedData.length > 0) {
@@ -303,42 +281,10 @@ export default function AdminPage() {
     });
   };
 
-  const handlePdfImportSubmit = async () => {
-    if (!selectedPdfFile) return toast({ title: "Aucun fichier PDF", description: "Sélectionnez un fichier PDF.", variant: "destructive" });
-    const formData = new FormData();
-    formData.append("pdfFile", selectedPdfFile);
-    startImportTransition(async () => {
-      const result = await importLotteryDataFromPdf(formData, importFilterDrawName === "all" ? null : importFilterDrawName);
-      if (result.success) {
-         processImportedData(result.data, "PDF");
-      } else {
-        toast({ title: "Erreur d'Importation PDF", description: result.error, variant: "destructive" });
-      }
-      setSelectedPdfFile(null);
-      const fileInput = document.getElementById('pdfFile') as HTMLInputElement;
-      if (fileInput) fileInput.value = '';
-    });
-  };
+  // Removed: handlePdfImportSubmit
+  // Removed: handleImageImportSubmit
 
-  const handleImageImportSubmit = async () => {
-    if (!selectedImageFile || !imagePreview) return toast({ title: "Aucune image", description: "Sélectionnez une image.", variant: "destructive" });
-    startImportTransition(async () => {
-      const result = await analyzeLotteryImageAction({ imageDataUri: imagePreview, drawNameFilter: importFilterDrawName === "all" ? null : importFilterDrawName });
-      if (result.success && result.extractedData) {
-        processImportedData(result.extractedData, "Image");
-        toast({ title: "Analyse d'Image Réussie", description: "Données extraites et potentiellement importées." });
-      } else {
-        toast({ title: "Erreur d'Analyse d'Image", description: result.error || "Impossible d'analyser l'image.", variant: "destructive" });
-      }
-      setSelectedImageFile(null);
-      setImagePreview(null);
-      const fileInput = document.getElementById('imageFile') as HTMLInputElement;
-      if (fileInput) fileInput.value = '';
-    });
-  };
-
-
-  const handleExportSubmit = async (formatType: 'json' | 'pdf' | 'image') => {
+  const handleExportSubmit = async (formatType: 'json') => { // Only JSON export left
     startExportTransition(async () => {
       let result;
       const filter = exportFilterDrawName === "all" ? null : exportFilterDrawName;
@@ -348,7 +294,7 @@ export default function AdminPage() {
             const blob = new Blob([result.jsonData], { type: 'application/json' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
-            link.download = result.fileName || 'Lotocrack_export_admin.json';
+            link.download = result.fileName || 'LotoBonheurInsights_export_admin.json';
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -357,35 +303,8 @@ export default function AdminPage() {
         } else {
             toast({ title: "Erreur d'Exportation JSON", description: result.error, variant: "destructive" });
         }
-      } else if (formatType === 'pdf') {
-        result = await exportLotteryDataToPdf(adminData, filter);
-        if (result.success && result.pdfBlob) {
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(result.pdfBlob);
-            link.download = result.fileName || 'Lotocrack_export_admin.pdf';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(link.href);
-            toast({ title: "Exportation PDF Réussie", description: "Fichier PDF téléchargé." });
-        } else {
-            toast({ title: "Erreur d'Exportation PDF", description: result.error, variant: "destructive" });
-        }
-      } else if (formatType === 'image') {
-        result = await exportLotteryDataToImage(adminData, filter);
-        if (result.success && result.imageDataUri) {
-            const link = document.createElement('a');
-            link.href = result.imageDataUri;
-            link.download = result.fileName || 'Lotocrack_export_admin.png';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            // No URL.revokeObjectURL for data URIs
-            toast({ title: "Exportation Image Réussie", description: "Fichier image téléchargé." });
-        } else {
-            toast({ title: "Erreur d'Exportation Image", description: result.error, variant: "destructive" });
-        }
       }
+      // Removed: PDF and Image export logic
     });
   };
 
@@ -477,7 +396,7 @@ export default function AdminPage() {
   };
 
   const handleResetCategoryClick = () => {
-    if (!categoryToReset || categoryToReset === "all") { // Prevent resetting "all"
+    if (!categoryToReset || categoryToReset === "all") { 
         toast({title: "Aucune catégorie valide", description: "Veuillez sélectionner une catégorie spécifique à réinitialiser.", variant: "destructive"});
         return;
     }
@@ -495,7 +414,6 @@ export default function AdminPage() {
         toast({ title: "Erreur", description: actionResult.error, variant: "destructive" });
       }
       setIsResetCategoryDialogOpen(false);
-      // setCategoryToReset(""); // Keep selected category for now or reset to "all"
     });
   };
 
@@ -506,7 +424,7 @@ export default function AdminPage() {
     <div className="space-y-8 p-4 md:p-6 lg:p-8">
       <Card>
         <CardHeader>
-          <CardTitle className="text-3xl font-bold">Interface d'Administration Lotocrack</CardTitle>
+          <CardTitle className="text-3xl font-bold">Interface d'Administration LotoBonheur Insights</CardTitle>
           <CardDescription>
             Gestion des données des tirages Loto Bonheur. Les modifications ici affectent les données stockées localement dans votre navigateur.
           </CardDescription>
@@ -530,7 +448,7 @@ export default function AdminPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-1 gap-6"> {/* Changed to 1 column as PDF/Image cards are removed */}
          {/* JSON Import/Export */}
         <Card>
             <CardHeader><CardTitle className="flex items-center"><FileJson className="mr-2"/>Importer/Exporter (JSON)</CardTitle></CardHeader>
@@ -569,85 +487,8 @@ export default function AdminPage() {
             </CardContent>
         </Card>
 
-        {/* PDF Import/Export */}
-        <Card>
-            <CardHeader><CardTitle className="flex items-center"><FileText className="mr-2"/>Importer/Exporter (PDF)</CardTitle></CardHeader>
-            <CardContent className="space-y-4">
-                 <div>
-                    <Label htmlFor="pdfFile">Importer un fichier PDF</Label>
-                    <Input id="pdfFile" type="file" accept=".pdf,application/pdf" onChange={handlePdfFileChange} className="mt-1" />
-                </div>
-                 <div className="mt-2">
-                    <Label htmlFor="importFilterDrawNamePdf">Filtrer par catégorie (Optionnel)</Label>
-                    <Select value={importFilterDrawName} onValueChange={setImportFilterDrawName}>
-                        <SelectTrigger id="importFilterDrawNamePdf"><SelectValue placeholder="Sélectionner une catégorie" /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">Toutes les catégories du PDF</SelectItem>
-                            {drawNames.map(name => <SelectItem key={`import-pdf-${name}`} value={name}>{name}</SelectItem>)}
-                        </SelectContent>
-                    </Select>
-                </div>
-                <Button onClick={handlePdfImportSubmit} disabled={isImporting || !selectedPdfFile} className="w-full mt-2">
-                {isImporting && selectedPdfFile ? <Loader2 className="animate-spin mr-2" /> : <UploadCloud className="mr-2" />} Importer PDF
-                </Button>
-                <hr className="my-4"/>
-                <div>
-                    <Label htmlFor="exportFilterDrawNamePdf">Exporter par catégorie (Optionnel)</Label>
-                     <Select value={exportFilterDrawName} onValueChange={setExportFilterDrawName}>
-                        <SelectTrigger id="exportFilterDrawNamePdf"><SelectValue placeholder="Sélectionner une catégorie" /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">Toutes les catégories</SelectItem>
-                            {drawNames.map(name => <SelectItem key={`export-pdf-${name}`} value={name}>{name}</SelectItem>)}
-                        </SelectContent>
-                    </Select>
-                </div>
-                <Button onClick={() => handleExportSubmit('pdf')} disabled={isExporting || adminData.length === 0} className="w-full mt-2">
-                {isExporting ? <Loader2 className="animate-spin mr-2" /> : <DownloadCloud className="mr-2" />} Exporter PDF
-                </Button>
-            </CardContent>
-        </Card>
-         {/* Image Import/Export */}
-        <Card>
-            <CardHeader><CardTitle className="flex items-center"><ImageIcon className="mr-2"/>Importer/Exporter (Image)</CardTitle></CardHeader>
-            <CardContent className="space-y-4">
-                <div>
-                    <Label htmlFor="imageFile">Importer une image de résultats</Label>
-                    <Input id="imageFile" type="file" accept="image/*" onChange={handleImageFileChange} className="mt-1" />
-                </div>
-                {imagePreview && (
-                    <div className="mt-2 border p-2 rounded-md">
-                        <Image src={imagePreview} alt="Aperçu" width={200} height={150} className="mx-auto object-contain" />
-                    </div>
-                )}
-                 <div className="mt-2">
-                    <Label htmlFor="importFilterDrawNameImage">Filtrer par catégorie (Optionnel pour l'analyse)</Label>
-                    <Select value={importFilterDrawName} onValueChange={setImportFilterDrawName}>
-                        <SelectTrigger id="importFilterDrawNameImage"><SelectValue placeholder="Sélectionner une catégorie" /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">Analyser pour toutes les catégories</SelectItem>
-                            {drawNames.map(name => <SelectItem key={`import-image-${name}`} value={name}>{name}</SelectItem>)}
-                        </SelectContent>
-                    </Select>
-                </div>
-                <Button onClick={handleImageImportSubmit} disabled={isImporting || !selectedImageFile} className="w-full mt-2">
-                    {isImporting && selectedImageFile ? <Loader2 className="animate-spin mr-2" /> : <UploadCloud className="mr-2" />} Analyser et Importer Image
-                </Button>
-                <hr className="my-4"/>
-                <div>
-                    <Label htmlFor="exportFilterDrawNameImage">Exporter par catégorie (Optionnel)</Label>
-                     <Select value={exportFilterDrawName} onValueChange={setExportFilterDrawName}>
-                        <SelectTrigger id="exportFilterDrawNameImage"><SelectValue placeholder="Sélectionner une catégorie" /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">Toutes les catégories</SelectItem>
-                            {drawNames.map(name => <SelectItem key={`export-image-${name}`} value={name}>{name}</SelectItem>)}
-                        </SelectContent>
-                    </Select>
-                </div>
-                <Button onClick={() => handleExportSubmit('image')} disabled={isExporting || adminData.length === 0} className="w-full mt-2">
-                {isExporting ? <Loader2 className="animate-spin mr-2" /> : <DownloadCloud className="mr-2" />} Exporter en Image
-                </Button>
-            </CardContent>
-        </Card>
+        {/* Removed: PDF Import/Export Card */}
+        {/* Removed: Image Import/Export Card */}
       </div>
 
       <Card>
@@ -658,7 +499,7 @@ export default function AdminPage() {
           </div>
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
-                <Button onClick={() => { reset({ draw_name: drawNames.length > 0 ? drawNames[0] : "", date: format(new Date(), 'yyyy-MM-dd'), gagnants: [], machine: [] }); setIsAddDialogOpen(true); }}>
+                <Button onClick={() => { reset({ draw_name: drawNames.length > 0 ? drawNames[0] : "", date: format(new Date(), 'yyyy-MM-dd'), gagnants: [], machine: [] }); setIsAddDialogOpen(true); closeSheet(false); }}>
                     <PlusCircle className="mr-2 h-4 w-4" /> Ajouter un Résultat
                 </Button>
             </DialogTrigger>
@@ -714,8 +555,8 @@ export default function AdminPage() {
                         <TableCell>{r.gagnants.join(', ')}</TableCell>
                         <TableCell>{r.machine && r.machine.length > 0 ? r.machine.join(', ') : 'N/A'}</TableCell>
                         <TableCell className="space-x-1 text-right">
-                            <Button variant="outline" size="icon" onClick={() => openEditDialog(r)} aria-label={`Modifier le résultat du ${format(parseISO(r.date), 'dd/MM/yyyy')} pour ${r.draw_name}`}><Edit className="h-4 w-4" /></Button>
-                            <Button variant="destructive" size="icon" onClick={() => handleDeleteClick(r.clientId!)} aria-label={`Supprimer le résultat du ${format(parseISO(r.date), 'dd/MM/yyyy')} pour ${r.draw_name}`}><Trash2 className="h-4 w-4" /></Button>
+                            <Button variant="outline" size="icon" onClick={() => { openEditDialog(r); closeSheet(false);}} aria-label={`Modifier le résultat du ${format(parseISO(r.date), 'dd/MM/yyyy')} pour ${r.draw_name}`}><Edit className="h-4 w-4" /></Button>
+                            <Button variant="destructive" size="icon" onClick={() => { handleDeleteClick(r.clientId!); closeSheet(false);}} aria-label={`Supprimer le résultat du ${format(parseISO(r.date), 'dd/MM/yyyy')} pour ${r.draw_name}`}><Trash2 className="h-4 w-4" /></Button>
                         </TableCell>
                         </TableRow>
                     ))}
@@ -747,7 +588,7 @@ export default function AdminPage() {
                       </Select>
                   </div>
                   <AlertDialogTrigger asChild>
-                      <Button variant="destructive" disabled={!categoryToReset || categoryToReset === "all" || isProcessing} onClick={handleResetCategoryClick}>
+                      <Button variant="destructive" disabled={!categoryToReset || categoryToReset === "all" || isProcessing} onClick={() => {handleResetCategoryClick(); closeSheet(false); }}>
                             {isProcessing && categoryToReset ? <Loader2 className="animate-spin mr-2 h-4 w-4"/> : <Trash2 className="mr-2 h-4 w-4" />} Réinitialiser la Catégorie
                       </Button>
                   </AlertDialogTrigger>

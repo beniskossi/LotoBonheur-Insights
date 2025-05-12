@@ -5,12 +5,11 @@ import type { LotteryResult } from '@/types/lottery';
 import { getUniqueDrawNames } from '@/config/draw-schedule';
 import { format, parseISO, isValid, parse as dateParse } from 'date-fns';
 import { z } from 'zod';
-import { jsPDF } from 'jspdf';
-import 'jspdf-autotable'; // Augments jsPDF
-// import pdfParse from 'pdf-parse'; // Removed top-level static import
-import { fr } from 'date-fns/locale';
-import { analyzeLotteryImage, type LotteryImageAnalysisInput, type LotteryImageAnalysisOutput } from '@/ai/flows/image-analysis-flow';
-import { exportToImage } from '@/lib/image-export';
+// import { jsPDF } from 'jspdf'; // Removed: PDF export
+// import 'jspdf-autotable'; // Removed: PDF export
+// import { fr } from 'date-fns/locale'; // Removed: PDF export specific (format uses it, but it is not critical for json only)
+// import { analyzeLotteryImage, type LotteryImageAnalysisInput, type LotteryImageAnalysisOutput } from '@/ai/flows/image-analysis-flow'; // Removed: Image analysis
+// import { exportToImage } from '@/lib/image-export'; // Removed: Image export
 
 
 // Schema for validating a single lottery result within the JSON
@@ -29,8 +28,8 @@ const LotteryResultSchemaForJson = z.object({
     .refine(arr => {
         if (arr.length === 0) return true; 
         if (arr.length === 5) {
-            if (arr.every(num => num === 0)) return true;
-            return arr.every(num => num >= 1 && num <= 90);
+            if (arr.every(num => num === 0)) return true; // Allow all zeros to mean "no machine numbers"
+            return arr.every(num => num >= 1 && num <= 90); // Or 5 valid numbers
         }
         return false; 
     }, {
@@ -189,6 +188,7 @@ export async function updateLotteryResultAction(clientId: string, resultData: Pa
   }
   
   // Simulate the update by creating a result object that reflects the changes
+  // This needs to be improved to actually merge with potentially existing data or fetch existing for a full object
   const simulatedUpdatedResult: LotteryResult = {
       clientId,
       draw_name: resultData.draw_name || "", // Fallback for simulation
@@ -207,226 +207,4 @@ export async function deleteLotteryResultAction(clientId: string): Promise<{ suc
 
 export async function resetCategoryDataAction(category: string): Promise<{ success: boolean; error?: string; message?: string }> {
   return { success: true, message: `Données pour la catégorie ${category} réinitialisées (simulation).` };
-}
-
-
-// PDF Import/Export
-const extractNumbers = (text: string | null): number[] => {
-  if (!text) return [];
-  return text.match(/\d+/g)?.map(Number) || [];
-};
-
-export async function importLotteryDataFromPdf(
-  formData: FormData,
-  filterDrawName?: string | null
-): Promise<{ success: boolean; data?: LotteryResult[]; error?: string; message?: string; importedCount?: number, originalCount?: number }> {
-  const file = formData.get('pdfFile') as File;
-
-  if (!file) {
-    return { success: false, error: 'Aucun fichier PDF fourni.' };
-  }
-  if (file.type !== 'application/pdf') {
-    return { success: false, error: 'Type de fichier invalide. Veuillez uploader un fichier PDF.' };
-  }
-
-  try {
-    const pdfParse = (await import('pdf-parse')).default; // Dynamic import
-    const arrayBuffer = await file.arrayBuffer();
-    const pdfData = await pdfParse(arrayBuffer);
-    const text = pdfData.text;
-    const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-
-    const results: LotteryResult[] = [];
-    let currentDrawName: string | null = null;
-    let currentDate: string | null = null;
-
-    for (const line of lines) {
-      const knownDrawName = getUniqueDrawNames().find(dn => line.toLowerCase().includes(dn.toLowerCase()));
-      if (knownDrawName) {
-        currentDrawName = knownDrawName;
-        // Try to extract date from the same line as draw name, assuming format like "DRAW NAME - DD Mois YYYY" or "DRAW NAME DD Mois YYYY"
-        const dateMatch = line.match(/(\d{1,2})\s+(Janvier|Février|Mars|Avril|Mai|Juin|Juillet|Août|Septembre|Octobre|Novembre|Décembre)\s+(\d{4})/i);
-        if (dateMatch) {
-            try {
-                const day = parseInt(dateMatch[1], 10);
-                const monthName = dateMatch[2];
-                const year = parseInt(dateMatch[3], 10);
-                const tempDate = dateParse(`${day} ${monthName} ${year}`, 'd MMMM yyyy', new Date(), { locale: fr });
-                if (isValid(tempDate)) {
-                    currentDate = format(tempDate, 'yyyy-MM-dd');
-                } else {
-                    currentDate = null; // Reset if date parsing fails for a new draw name line
-                }
-            } catch (e) { 
-                console.warn("Could not parse date from draw name line:", line); 
-                currentDate = null;
-            }
-        } else {
-             currentDate = null; // If no date on this line, reset
-        }
-        continue; // Move to next line after processing draw name and potentially date
-      }
-
-
-      // If we have a draw name and date, look for Gagnants and Machine
-      if (currentDrawName && currentDate) {
-        if (line.toLowerCase().startsWith("gagnant:") || line.toLowerCase().startsWith("gagnants:")) {
-          const gagnants = extractNumbers(line.substring(line.indexOf(':') + 1)).slice(0, 5);
-          
-          let machine: number[] = [];
-          const nextLineIndex = lines.indexOf(line) + 1;
-          if (nextLineIndex < lines.length) {
-              const nextLine = lines[nextLineIndex];
-              if (nextLine.toLowerCase().startsWith("machine:")) {
-                  machine = extractNumbers(nextLine.substring(nextLine.indexOf(':') + 1)).slice(0,5);
-                  // Normalize machine numbers: [0,0,0,0,0] or invalid length becomes []
-                  if (machine.length === 5 && machine.every(n => n === 0)) {
-                      machine = [];
-                  } else if (machine.length > 0 && machine.length < 5) { // If some numbers but not 5, consider invalid
-                      machine = [];
-                  }
-              }
-          }
-          
-          if (gagnants.length === 5) { // Only add if we have 5 winning numbers
-            results.push({
-              draw_name: currentDrawName,
-              date: currentDate,
-              gagnants,
-              machine: machine, // machine is already normalized or empty
-              clientId: `${currentDrawName}-${currentDate}-${Math.random().toString(36).substring(2, 9)}`
-            });
-          }
-        }
-      }
-    }
-    
-    const originalCount = results.length;
-    let filteredResults = results;
-     if (filterDrawName && filterDrawName !== "all") {
-      filteredResults = results.filter(r => r.draw_name === filterDrawName);
-    }
-    const importedCount = filteredResults.length;
-
-    if (results.length === 0) {
-      return { success: false, error: 'Aucun résultat valide n\'a pu être extrait du PDF. Vérifiez la structure du PDF: Chaque tirage doit avoir un nom de tirage connu et une date valide sur la même ligne, suivis de "Gagnants:" et optionnellement "Machine:" sur les lignes suivantes.' };
-    }
-
-    return { 
-        success: true, 
-        data: filteredResults, 
-        importedCount,
-        originalCount,
-        message: `${originalCount} résultat(s) lu(s) depuis le PDF. ${importedCount} après filtre pour "${filterDrawName || 'tous'}".` 
-    };
-
-  } catch (error: any) {
-    console.error('Error parsing PDF for import:', error);
-    return { success: false, error: `Erreur lors de l'analyse du PDF: ${error.message || 'Erreur inconnue'}` };
-  }
-}
-
-export async function exportLotteryDataToPdf(
-  allResults: LotteryResult[],
-  filterDrawName?: string | null
-): Promise<{ success: boolean; pdfBlob?: Blob; fileName?: string; error?: string }> {
-  const resultsToExport = (filterDrawName && filterDrawName !== "all")
-    ? allResults.filter(r => r.draw_name === filterDrawName)
-    : allResults;
-
-  if (!resultsToExport || resultsToExport.length === 0) {
-    return { success: false, error: 'Aucune donnée à exporter (après application du filtre).' };
-  }
-
-  try {
-    const doc = new jsPDF();
-    const sortedResults = [...resultsToExport].sort((a, b) => {
-      const dateComparison = b.date.localeCompare(a.date);
-      if (dateComparison !== 0) return dateComparison;
-      return a.draw_name.localeCompare(b.draw_name);
-    });
-
-    doc.setFontSize(16);
-    doc.text(`LotoBonheur Insights - Résultats de Loterie`, 14, 20);
-    doc.setFontSize(12);
-    doc.text(`Catégorie: ${filterDrawName && filterDrawName !== "all" ? filterDrawName : 'Toutes les catégories'}`, 14, 28);
-    doc.setFontSize(10);
-    doc.text(`Exporté le: ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: fr })}`, 14, 34);
-    doc.text(`Total résultats: ${sortedResults.length}`, 14, 40);
-
-
-    const tableColumn = ["Date du Tirage", "Nom du Tirage", "Numéros Gagnants", "Numéros Machine"];
-    const tableRows: (string | number)[][] = [];
-
-    sortedResults.forEach(result => {
-      const resultData = [
-        format(parseISO(result.date), 'dd/MM/yyyy'),
-        result.draw_name,
-        result.gagnants.join(', '),
-        result.machine && result.machine.length > 0 ? result.machine.join(', ') : 'N/A'
-      ];
-      tableRows.push(resultData);
-    });
-
-    (doc as any).autoTable({
-        head: [tableColumn],
-        body: tableRows,
-        startY: 50, 
-        theme: 'striped', // 'striped', 'grid', 'plain'
-        headStyles: { fillColor: [45, 100, 50] }, // Gold like color for header (using HSL for accent)
-        styles: { font: "helvetica", fontSize: 9, cellPadding: 2 },
-        alternateRowStyles: { fillColor: [220, 20, 15] }, // Darker Gray for alternate rows (using HSL for muted)
-    });
-    
-    const pdfBlob = doc.output('blob');
-    const currentDate = format(new Date(), 'yyyyMMdd_HHmmss');
-    const fileName = `LotoBonheurInsights_Export_${filterDrawName && filterDrawName !== "all" ? filterDrawName.replace(/\s+/g, '_') : 'Tous'}_${currentDate}.pdf`;
-
-    return { success: true, pdfBlob, fileName };
-
-  } catch (error: any) {
-    console.error('Error exporting PDF:', error);
-    return { success: false, error: `Erreur lors de l'exportation en PDF: ${error.message}` };
-  }
-}
-
-
-export async function analyzeLotteryImageAction(
-  input: LotteryImageAnalysisInput
-): Promise<LotteryImageAnalysisOutput & { success: boolean; error?: string }> {
-  try {
-    const result = await analyzeLotteryImage(input);
-    return { ...result, success: true };
-  } catch (error: any) {
-    console.error('Error analyzing lottery image in action:', error);
-    return {
-      success: false,
-      error: `Erreur lors de l'analyse de l'image: ${error.message || 'Erreur inconnue du serveur.'}`,
-      extractedData: [],
-      analysisSummary: `Échec de l'analyse: ${error.message || 'Erreur inconnue.'}`
-    };
-  }
-}
-
-export async function exportLotteryDataToImage(
-  allResults: LotteryResult[],
-  filterDrawName?: string | null
-): Promise<{ success: boolean; imageDataUri?: string; fileName?: string; error?: string }> {
-  const resultsToExport = (filterDrawName && filterDrawName !== "all")
-    ? allResults.filter(r => r.draw_name === filterDrawName)
-    : allResults;
-
-  if (!resultsToExport || resultsToExport.length === 0) {
-    return { success: false, error: 'Aucune donnée à exporter (après application du filtre).' };
-  }
-  
-  try {
-    const imageDataUri = await exportToImage(resultsToExport, filterDrawName);
-    const currentDate = format(new Date(), 'yyyyMMdd_HHmmss');
-    const fileName = `LotoBonheurInsights_Export_${filterDrawName && filterDrawName !== "all" ? filterDrawName.replace(/\s+/g, '_') : 'Tous'}_${currentDate}.png`;
-    return { success: true, imageDataUri, fileName };
-  } catch (error: any) {
-    console.error('Error exporting to image:', error);
-    return { success: false, error: `Erreur lors de l'exportation en image: ${error.message}` };
-  }
 }
