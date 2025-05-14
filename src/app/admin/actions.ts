@@ -3,7 +3,7 @@
 
 import type { LotteryResult } from '@/types/lottery';
 import { getUniqueDrawNames } from '@/config/draw-schedule';
-import { format, parseISO, isValid, parse as dateParse } from 'date-fns';
+import { format as formatDateFns, parse as dateParse, isValid } from 'date-fns';
 import { z } from 'zod';
 // import { jsPDF } from 'jspdf'; // Removed: PDF export
 // import 'jspdf-autotable'; // Removed: PDF export
@@ -14,28 +14,48 @@ import { z } from 'zod';
 
 // Schema for validating a single lottery result within the JSON
 const LotteryResultSchemaForJson = z.object({
-  draw_name: z.string().min(1),
-  date: z.string().refine(val => {
-    try {
-      const parsed = dateParse(val, 'yyyy-MM-dd', new Date());
-      return isValid(parsed) && format(parsed, 'yyyy-MM-dd') === val;
-    } catch {
-      return false;
+  draw_name: z.string().min(1, "Le nom du tirage est requis."),
+  date: z.string().transform((dateString, ctx) => {
+    const possibleFormats = [
+      'yyyy-MM-dd',
+      'dd/MM/yyyy',
+      'MM/dd/yyyy',
+      'dd-MM-yyyy',
+      'MM-dd-yyyy',
+      'yyyy/MM/dd',
+    ];
+    let parsedDate: Date | null = null;
+    for (const fmt of possibleFormats) {
+      const d = dateParse(dateString, fmt, new Date());
+      if (isValid(d)) {
+        parsedDate = d;
+        break;
+      }
     }
-  }, { message: "Invalid date format, expected YYYY-MM-DD" }),
-  gagnants: z.array(z.number().int().min(1).max(90)).length(5),
-  machine: z.array(z.number().int().min(0).max(90)) 
+    if (!parsedDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Format de date invalide. Formats acceptés: ${possibleFormats.join(', ')}. Reçu: "${dateString}"`,
+      });
+      return z.NEVER; // Required by Zod for transforms that can fail
+    }
+    return formatDateFns(parsedDate, 'yyyy-MM-dd'); // Normalize to YYYY-MM-DD
+  }),
+  gagnants: z.array(z.number().int().min(1, "Numéro gagnant doit être >= 1.").max(90, "Numéro gagnant doit être <= 90.")).length(5, "5 numéros gagnants sont requis."),
+  machine: z.array(z.number().int().min(0, "Numéro machine doit être >= 0.").max(90, "Numéro machine doit être <= 90."))
     .refine(arr => {
-        if (arr.length === 0) return true; 
-        if (arr.length === 5) {
-            if (arr.every(num => num === 0)) return true; // Allow all zeros to mean "no machine numbers"
-            return arr.every(num => num >= 1 && num <= 90); // Or 5 valid numbers
-        }
-        return false; 
+      if (arr.length === 0) return true; // Empty array is valid (no machine numbers)
+      if (arr.length === 5) {
+        // Allow five 0s (as a way to signify no numbers, will be normalized to [])
+        // OR five valid numbers between 1 and 90.
+        if (arr.every(num => num === 0)) return true;
+        return arr.every(num => num >= 1 && num <= 90);
+      }
+      return false; // Any other length is invalid
     }, {
-        message: "Les numéros machine doivent être: un tableau vide, OU un tableau de 5 numéros (chacun entre 1 et 90), OU un tableau de cinq zéros pour indiquer l'absence de numéros machine.",
-    }).optional(), // Make the machine field itself optional in the JSON
-  clientId: z.string().optional(), 
+      message: "Numéros machine: optionnel. Si fourni, doit être vide [], ou cinq zéros [0,0,0,0,0], ou 5 numéros (1-90).",
+    }).optional().default([]), // Optional, defaults to empty array if not provided in JSON
+  clientId: z.string().optional(),
 });
 
 const LotteryResultsArraySchema = z.array(LotteryResultSchemaForJson);
@@ -63,22 +83,23 @@ export async function importLotteryDataFromJson(
 
     if (!validationResult.success) {
       console.error("JSON validation errors:", validationResult.error.flatten());
-      const errorMessages = validationResult.error.errors.map(e => `Path: ${e.path.join('.')}, Message: ${e.message}`).join('; ');
+      const errorMessages = validationResult.error.errors.map(e => `Chemin: ${e.path.join('.') || 'racine'}, Message: ${e.message}`).join('; ');
       return { success: false, error: `Le fichier JSON n'a pas le format attendu. Erreurs: ${errorMessages}` };
     }
     
     const allImportedResults: LotteryResult[] = validationResult.data.map(item => {
-      // If item.machine is undefined (due to .optional()), default to empty array.
-      let machineNumbers = Array.isArray(item.machine) ? item.machine : [];
+      // item.date is now guaranteed to be 'yyyy-MM-dd' by the schema transform
+      // item.machine is already defaulted to [] by schema if not present
+      let machineNumbers = item.machine;
       // Normalize [0,0,0,0,0] to [] if that's the convention for "no machine numbers"
       if (machineNumbers.length === 5 && machineNumbers.every(n => n === 0)) {
         machineNumbers = [];
       }
       return {
-        draw_name: item.draw_name, // These are guaranteed by schema
-        date: item.date,
+        draw_name: item.draw_name,
+        date: item.date, // This is now the 'yyyy-MM-dd' transformed date
         gagnants: item.gagnants,
-        machine: machineNumbers, 
+        machine: machineNumbers,
         clientId: item.clientId || `${item.draw_name}-${item.date}-${Math.random().toString(36).substring(2, 9)}`
       };
     });
@@ -91,7 +112,7 @@ export async function importLotteryDataFromJson(
       filteredResults = allImportedResults.filter(r => r.draw_name === filterDrawName);
     }
     
-    const importedCount = filteredResults.length; 
+    const importedCount = filteredResults.length;
 
     if (originalCount === 0 && fileContent.trim() !== "[]") {
       return { success: false, error: 'Aucune donnée de tirage valide n\'a pu être extraite du JSON. Vérifiez le format des données.' };
@@ -143,7 +164,7 @@ export async function exportLotteryDataToJson(
       ...rest,
       machine: Array.isArray(rest.machine) && rest.machine.length > 0 ? rest.machine : [] // Ensure exported machine is [] if empty/null
     })), null, 2); // Remove clientId for export
-    const currentDate = format(new Date(), 'yyyyMMdd_HHmmss');
+    const currentDate = formatDateFns(new Date(), 'yyyyMMdd_HHmmss');
     const fileName = `LotoBonheurInsights_Export_Admin_${filterDrawName && filterDrawName !== "all" ? filterDrawName.replace(/\s+/g, '_') : 'Tous'}_${currentDate}.json`;
 
     return { success: true, jsonData: jsonString, fileName };
@@ -180,22 +201,18 @@ export async function updateLotteryResultAction(clientId: string, resultData: Pa
     }
   }
 
-  // Construct the final result for simulation, applying updates
-  // This is simplified; a real DB update would merge with existing data
   const finalResultData: Partial<LotteryResult> = { ...resultData };
   if (machineNumbersToUpdate !== undefined) {
     finalResultData.machine = machineNumbersToUpdate;
   }
   
-  // Simulate the update by creating a result object that reflects the changes
-  // This needs to be improved to actually merge with potentially existing data or fetch existing for a full object
   const simulatedUpdatedResult: LotteryResult = {
       clientId,
-      draw_name: resultData.draw_name || "", // Fallback for simulation
-      date: resultData.date || "", // Fallback for simulation
-      gagnants: resultData.gagnants || [], // Fallback for simulation
-      machine: machineNumbersToUpdate === undefined ? [] : machineNumbersToUpdate, // Default to [] if not updated
-      ...(resultData as Partial<LotteryResult>) // Apply other partial updates
+      draw_name: resultData.draw_name || "", 
+      date: resultData.date || "", 
+      gagnants: resultData.gagnants || [], 
+      machine: machineNumbersToUpdate === undefined ? [] : machineNumbersToUpdate, 
+      ...(resultData as Partial<LotteryResult>) 
   };
   
   return { success: true, message: "Résultat mis à jour avec succès (simulation).", result: simulatedUpdatedResult };

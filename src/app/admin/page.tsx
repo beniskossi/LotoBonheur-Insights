@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AlertTriangle, UploadCloud, DownloadCloud, Loader2, PlusCircle, Edit, Trash2, RefreshCw, Eye, ShieldAlert, Info, Filter, FileJson } from "lucide-react"; // Removed FileText, ImageIcon
+import { AlertTriangle, UploadCloud, DownloadCloud, Loader2, PlusCircle, Edit, Trash2, RefreshCw, Eye, ShieldAlert, Info, Filter, FileJson } from "lucide-react";
 import { useState, useTransition, useEffect, useCallback } from "react";
 import { useForm, Controller, SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -23,13 +23,10 @@ import {
   updateLotteryResultAction,
   deleteLotteryResultAction,
   resetCategoryDataAction,
-  // analyzeLotteryImageAction, // Removed
-  // exportLotteryDataToImage // Removed
 } from "./actions";
 import { getUniqueDrawNames } from "@/config/draw-schedule";
-import { format, parseISO, isValid, parse as dateParse } from 'date-fns';
+import { format, parseISO, isValid, parse as dateParseFn } from 'date-fns'; // Renamed parse to dateParseFn
 import { useSidebar } from '@/components/ui/sidebar';
-// import Image from "next/image"; // Removed as image preview is gone
 
 
 type LotteryResultWithId = LotteryResult & { clientId: string };
@@ -39,7 +36,8 @@ const lotteryResultSchema = z.object({
   draw_name: z.string().min(1, "Le nom du tirage est requis."),
   date: z.string().refine(val => {
     try {
-      const parsed = dateParse(val, 'yyyy-MM-dd', new Date());
+      // Use the renamed dateParseFn here
+      const parsed = dateParseFn(val, 'yyyy-MM-dd', new Date());
       return isValid(parsed) && format(parsed, 'yyyy-MM-dd') === val;
     } catch {
       return false;
@@ -89,14 +87,16 @@ const NumberArrayInput: React.FC<NumberArrayInputProps> = ({ value: rhfValue, on
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawValue = e.target.value;
     setInputValue(rawValue);
+    // Allow only digits, commas, and spaces for better UX, parse on blur/submit
     if (/^[\d,\s]*$/.test(rawValue)) {
-        rhfOnChange(parseNumbersString(rawValue));
+        rhfOnChange(parseNumbersString(rawValue)); // Update RHF immediately for live validation feedback if desired
     }
   };
 
   const handleInputBlur = () => {
+    // Ensure final parsed value is set on blur
     rhfOnChange(parseNumbersString(inputValue));
-    rhfOnBlur();
+    rhfOnBlur(); // Trigger RHF's onBlur
   };
 
   return (
@@ -104,8 +104,8 @@ const NumberArrayInput: React.FC<NumberArrayInputProps> = ({ value: rhfValue, on
       id={id}
       placeholder={placeholder}
       onChange={handleInputChange}
-      onBlur={handleInputBlur}
-      value={inputValue}
+      onBlur={handleInputBlur} // Use RHF's onBlur
+      value={inputValue} // Controlled by local state for typing flexibility
       aria-label={ariaLabel}
       disabled={disabled}
     />
@@ -124,9 +124,6 @@ export default function AdminPage() {
   const [initialLoadMessage, setInitialLoadMessage] = useState<string | null>(null);
 
   const [selectedJsonFile, setSelectedJsonFile] = useState<File | null>(null);
-  // const [selectedPdfFile, setSelectedPdfFile] = useState<File | null>(null); // Removed
-  // const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null); // Removed
-  // const [imagePreview, setImagePreview] = useState<string | null>(null); // Removed
 
 
   const [viewCategory, setViewCategory] = useState<string>("all");
@@ -225,8 +222,6 @@ export default function AdminPage() {
     setSelectedJsonFile(event.target.files?.[0] || null);
   };
 
-  // Removed: handlePdfFileChange
-  // Removed: handleImageFileChange
 
   const processImportedData = (importedData: LotteryResult[] | undefined, source: string) => {
     if (importedData && importedData.length > 0) {
@@ -272,6 +267,9 @@ export default function AdminPage() {
       const result = await importLotteryDataFromJson(formData, importFilterDrawName === "all" ? null : importFilterDrawName);
       if (result.success) {
         processImportedData(result.data, "JSON");
+        if (result.message) { // Display specific message from action
+            toast({title: "Info Importation JSON", description: result.message});
+        }
       } else {
         toast({ title: "Erreur d'Importation JSON", description: result.error, variant: "destructive" });
       }
@@ -281,10 +279,8 @@ export default function AdminPage() {
     });
   };
 
-  // Removed: handlePdfImportSubmit
-  // Removed: handleImageImportSubmit
 
-  const handleExportSubmit = async (formatType: 'json') => { // Only JSON export left
+  const handleExportSubmit = async (formatType: 'json') => { 
     startExportTransition(async () => {
       let result;
       const filter = exportFilterDrawName === "all" ? null : exportFilterDrawName;
@@ -304,7 +300,6 @@ export default function AdminPage() {
             toast({ title: "Erreur d'Exportation JSON", description: result.error, variant: "destructive" });
         }
       }
-      // Removed: PDF and Image export logic
     });
   };
 
@@ -448,7 +443,7 @@ export default function AdminPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 md:grid-cols-1 gap-6"> {/* Changed to 1 column as PDF/Image cards are removed */}
+      <div className="grid grid-cols-1 md:grid-cols-1 gap-6"> 
          {/* JSON Import/Export */}
         <Card>
             <CardHeader><CardTitle className="flex items-center"><FileJson className="mr-2"/>Importer/Exporter (JSON)</CardTitle></CardHeader>
@@ -456,6 +451,10 @@ export default function AdminPage() {
                 <div>
                     <Label htmlFor="jsonFile">Importer un fichier JSON</Label>
                     <Input id="jsonFile" type="file" accept=".json,application/json" onChange={handleJsonFileChange} className="mt-1" />
+                    <p className="text-xs text-muted-foreground mt-1">
+                        Format attendu: un tableau d'objets. Chaque objet: {" { \"draw_name\": \"NOM\", \"date\": \"YYYY-MM-DD\", \"gagnants\": [n1,n2,n3,n4,n5], \"machine\": [m1,m2,m3,m4,m5] ou [] } "}.
+                        Dates alternatives (ex: DD/MM/YYYY) sont aussi acceptées.
+                    </p>
                 </div>
                 <div className="mt-2">
                     <Label htmlFor="importFilterDrawNameJson">Filtrer par catégorie (Optionnel)</Label>
@@ -486,9 +485,6 @@ export default function AdminPage() {
                 </Button>
             </CardContent>
         </Card>
-
-        {/* Removed: PDF Import/Export Card */}
-        {/* Removed: Image Import/Export Card */}
       </div>
 
       <Card>
@@ -711,4 +707,3 @@ const FormItemNumberArray: React.FC<FormItemNumberArrayProps> = ({ control, name
         {errors[name]?.message && <p className="text-destructive text-sm">{errors[name].message as string}</p>}
     </div>
 );
-
