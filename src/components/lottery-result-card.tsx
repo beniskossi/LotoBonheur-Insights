@@ -11,19 +11,26 @@ interface LotteryResultCardProps {
 }
 
 const getBallColorClass = (number: number): string => {
-  const group = Math.floor((number - 1) / 10);
-  switch (group) {
-    case 0: return 'bg-[hsl(var(--chart-1))] text-primary-foreground'; // 1-10
-    case 1: return 'bg-[hsl(var(--chart-2))] text-accent-foreground'; // 11-20
-    case 2: return 'bg-[hsl(var(--chart-3))] text-primary-foreground'; // 21-30
-    case 3: return 'bg-[hsl(var(--chart-4))] text-primary-foreground'; // 31-40
-    case 4: return 'bg-[hsl(var(--chart-5))] text-primary-foreground'; // 41-50
-    case 5: return 'bg-[hsl(var(--chart-1))] opacity-80 text-primary-foreground'; // 51-60 (cycle)
-    case 6: return 'bg-[hsl(var(--chart-2))] opacity-80 text-accent-foreground'; // 61-70 (cycle)
-    case 7: return 'bg-[hsl(var(--chart-3))] opacity-80 text-primary-foreground'; // 71-80 (cycle)
-    case 8: return 'bg-[hsl(var(--chart-4))] opacity-80 text-primary-foreground'; // 81-90 (cycle)
-    default: return 'bg-muted text-muted-foreground';
+  if (number >= 1 && number <= 9) { // Blanc
+    return 'bg-white text-black';
+  } else if (number >= 10 && number <= 19) { // Bleu clair
+    return 'bg-blue-300 text-blue-800';
+  } else if (number >= 20 && number <= 29) { // Bleu foncé
+    return 'bg-blue-700 text-blue-100';
+  } else if (number >= 30 && number <= 39) { // Vert clair
+    return 'bg-green-300 text-green-800';
+  } else if (number >= 40 && number <= 49) { // Violet
+    return 'bg-purple-500 text-white';
+  } else if (number >= 50 && number <= 59) { // Indigo
+    return 'bg-indigo-500 text-white';
+  } else if (number >= 60 && number <= 69) { // Jaune
+    return 'bg-yellow-400 text-yellow-800';
+  } else if (number >= 70 && number <= 79) { // Orange
+    return 'bg-orange-500 text-white';
+  } else if (number >= 80 && number <= 90) { // Rouge
+    return 'bg-red-600 text-white';
   }
+  return 'bg-muted text-muted-foreground'; // Default fallback
 };
 
 export default function LotteryResultCard({ result }: LotteryResultCardProps) {
@@ -80,8 +87,7 @@ export default function LotteryResultCard({ result }: LotteryResultCardProps) {
               {result.machine.map((num, index) => (
                 <Badge 
                   key={`machine-${index}`} 
-                  variant="secondary" 
-                  className={`text-base px-2.5 py-1 rounded-md ${getBallColorClass(num)}`}
+                  className={`text-base px-2.5 py-1 rounded-md ${getBallColorClass(num)}`} // Apply same coloring to machine numbers
                 >
                   {num}
                 </Badge>

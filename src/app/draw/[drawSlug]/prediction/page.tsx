@@ -13,23 +13,30 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Lightbulb, ShieldCheck, Wand2, Info, Brain, CheckCircle, BarChartHorizontalBig, ListTree, Cog } from "lucide-react"; // Added Cog for RNN
+import { Lightbulb, ShieldCheck, Wand2, Info, Brain, CheckCircle, BarChartHorizontalBig, ListTree, Cog } from "lucide-react";
 import { toast as useToastHook } from "@/hooks/use-toast";
 
 const getBallColorClass = (number: number): string => {
-  const group = Math.floor((number - 1) / 10);
-  switch (group) {
-    case 0: return 'bg-[hsl(var(--chart-1))] text-primary-foreground'; 
-    case 1: return 'bg-[hsl(var(--chart-2))] text-accent-foreground'; 
-    case 2: return 'bg-[hsl(var(--chart-3))] text-primary-foreground'; 
-    case 3: return 'bg-[hsl(var(--chart-4))] text-primary-foreground'; 
-    case 4: return 'bg-[hsl(var(--chart-5))] text-primary-foreground'; 
-    case 5: return 'bg-[hsl(var(--chart-1))] opacity-80 text-primary-foreground';
-    case 6: return 'bg-[hsl(var(--chart-2))] opacity-80 text-accent-foreground';
-    case 7: return 'bg-[hsl(var(--chart-3))] opacity-80 text-primary-foreground';
-    case 8: return 'bg-[hsl(var(--chart-4))] opacity-80 text-primary-foreground';
-    default: return 'bg-muted text-muted-foreground';
+  if (number >= 1 && number <= 9) { // Blanc
+    return 'bg-white text-black';
+  } else if (number >= 10 && number <= 19) { // Bleu clair
+    return 'bg-blue-300 text-blue-800';
+  } else if (number >= 20 && number <= 29) { // Bleu foncé
+    return 'bg-blue-700 text-blue-100';
+  } else if (number >= 30 && number <= 39) { // Vert clair
+    return 'bg-green-300 text-green-800';
+  } else if (number >= 40 && number <= 49) { // Violet
+    return 'bg-purple-500 text-white';
+  } else if (number >= 50 && number <= 59) { // Indigo
+    return 'bg-indigo-500 text-white';
+  } else if (number >= 60 && number <= 69) { // Jaune
+    return 'bg-yellow-400 text-yellow-800';
+  } else if (number >= 70 && number <= 79) { // Orange
+    return 'bg-orange-500 text-white';
+  } else if (number >= 80 && number <= 90) { // Rouge
+    return 'bg-red-600 text-white';
   }
+  return 'bg-muted text-muted-foreground'; // Default fallback
 };
 
 function PredictionCard({ prediction, isRecommended = false }: { prediction: SinglePrediction, isRecommended?: boolean }) {
@@ -196,7 +203,7 @@ export default function PredictionPage() {
           <Card className="border-2 border-primary shadow-2xl">
             <CardHeader className="text-center bg-primary/5">
                <div className="flex items-center justify-center text-primary">
-                 <Cog className="h-8 w-8 mr-3" /> {/* Changed icon to Cog for RNN */}
+                 <Cog className="h-8 w-8 mr-3" />
                 <CardTitle className="text-3xl">Prédiction du Réseau Neuronal</CardTitle>
                </div>
               <CardDescription className="text-md">
@@ -215,20 +222,20 @@ export default function PredictionPage() {
           <div className="space-y-4">
             <h2 className="text-2xl font-semibold flex items-center">
               <ListTree className="mr-3 h-6 w-6 text-muted-foreground" />
-              Analyses par Algorithmes Statistiques
+              Autres Analyses Algorithmiques
             </h2>
             <p className="text-muted-foreground">
-              Explorez les prédictions alternatives générées par différents algorithmes statistiques (Fréquence, Retards, Associations, Distribution). Cela peut offrir des perspectives complémentaires.
+             Explorez les prédictions alternatives générées par nos différents algorithmes statistiques (Fréquence, Retards, Associations, Distribution). Chacun offre une perspective unique sur les tendances des numéros.
             </p>
             <Accordion type="single" collapsible className="w-full" defaultValue="all-methods">
               <AccordionItem value="all-methods">
                 <AccordionTrigger className="text-xl font-semibold hover:no-underline text-left py-3">
                   <BarChartHorizontalBig className="mr-3 h-5 w-5 text-muted-foreground" />
-                  Voir les détails par algorithme statistique
+                  Afficher les prédictions par algorithme statistique
                 </AccordionTrigger>
                 <AccordionContent className="pt-4 space-y-6">
                   {predictionOutput.allPredictions
-                    .filter(p => p.methodName !== predictionOutput.recommendedPrediction.methodName) // Exclude the main RNN prediction
+                    .filter(p => p.methodName !== predictionOutput.recommendedPrediction.methodName) 
                     .sort((a, b) => a.methodName.localeCompare(b.methodName)) 
                     .map((pred, index) => (
                       <PredictionCard key={`${pred.methodName}-${index}`} prediction={pred} />
