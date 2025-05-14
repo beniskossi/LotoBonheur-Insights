@@ -3,11 +3,12 @@ import { parse, getYear, format } from 'date-fns';
 import { NextResponse } from 'next/server';
 // import { ai } from '@/ai/genkit'; // ai.netService.fetch is replaced
 import { DRAW_SCHEDULE } from '@/config/draw-schedule';
+import type { LotteryResult } from '@/types/lottery';
 
 interface ApiDraw {
   drawName: string;
   winningNumbers: string;
-  machineNumbers: string;
+  machineNumbers?: string; // Make machineNumbers optional at API response level
 }
 
 interface ApiDailyResult {
@@ -27,18 +28,11 @@ interface ApiResponse {
   hasMore?: boolean;
 }
 
-interface FormattedResult {
-  draw_name: string;
-  date: string; // YYYY-MM-DD
-  gagnants: number[];
-  machine: number[];
-}
-
-export async function GET(): Promise<NextResponse<FormattedResult[] | { error: string }>> {
+export async function GET(): Promise<NextResponse<LotteryResult[] | { error: string }>> {
   const baseUrl = 'https://lotobonheur.ci/api/results';
 
   try {
-    const results: FormattedResult[] = [];
+    const results: LotteryResult[] = [];
     let page = 1;
     let hasMoreData = true;
     const currentYear = getYear(new Date());
@@ -126,19 +120,22 @@ export async function GET(): Promise<NextResponse<FormattedResult[] | { error: s
 
           for (const draw of dailyResult.drawResults.standardDraws) {
             const drawName = draw.drawName;
-            if (!validDrawNames.has(drawName) || draw.winningNumbers.startsWith('.')) {
+            if (!validDrawNames.has(drawName) || (draw.winningNumbers && draw.winningNumbers.startsWith('.'))) {
               continue;
             }
 
-            const winningNumbers = (draw.winningNumbers.match(/\d+/g) || []).map(Number).slice(0, 5);
-            let machineNumbers = (draw.machineNumbers.match(/\d+/g) || []).map(Number).slice(0, 5);
+            const winningNumbers = ((draw.winningNumbers || '').match(/\d+/g) || []).map(Number).slice(0, 5);
+            // Handle potentially missing machineNumbers field or empty string
+            let machineNumbers = ((draw.machineNumbers || '').match(/\d+/g) || []).map(Number).slice(0, 5);
 
-            // Normalize [0,0,0,0,0] to [] for machine numbers
+
+            // Normalize [0,0,0,0,0] to [] for machine numbers, only if 5 numbers were parsed
             if (machineNumbers.length === 5 && machineNumbers.every(n => n === 0)) {
               machineNumbers = [];
             }
 
-            if (winningNumbers.length === 5 && (machineNumbers.length === 0 || machineNumbers.length === 5)) {
+            // Ensure winning numbers are valid, machine numbers are either empty or 5 valid numbers
+            if (winningNumbers.length === 5 && (machineNumbers.length === 0 || (machineNumbers.length === 5 && machineNumbers.every(n => n >= 0 && n <=90)))) {
               results.push({
                 draw_name: drawName,
                 date: drawDate,
