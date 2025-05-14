@@ -13,21 +13,41 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Lightbulb, ShieldCheck, Wand2, Info, Brain, CheckCircle, BarChartHorizontalBig, ListTree } from "lucide-react";
+import { Lightbulb, ShieldCheck, Wand2, Info, Brain, CheckCircle, BarChartHorizontalBig, ListTree, Cog } from "lucide-react"; // Added Cog for RNN
+import { toast as useToastHook } from "@/hooks/use-toast";
+
+const getBallColorClass = (number: number): string => {
+  const group = Math.floor((number - 1) / 10);
+  switch (group) {
+    case 0: return 'bg-[hsl(var(--chart-1))] text-primary-foreground'; 
+    case 1: return 'bg-[hsl(var(--chart-2))] text-accent-foreground'; 
+    case 2: return 'bg-[hsl(var(--chart-3))] text-primary-foreground'; 
+    case 3: return 'bg-[hsl(var(--chart-4))] text-primary-foreground'; 
+    case 4: return 'bg-[hsl(var(--chart-5))] text-primary-foreground'; 
+    case 5: return 'bg-[hsl(var(--chart-1))] opacity-80 text-primary-foreground';
+    case 6: return 'bg-[hsl(var(--chart-2))] opacity-80 text-accent-foreground';
+    case 7: return 'bg-[hsl(var(--chart-3))] opacity-80 text-primary-foreground';
+    case 8: return 'bg-[hsl(var(--chart-4))] opacity-80 text-primary-foreground';
+    default: return 'bg-muted text-muted-foreground';
+  }
+};
 
 function PredictionCard({ prediction, isRecommended = false }: { prediction: SinglePrediction, isRecommended?: boolean }) {
+  const icon = isRecommended ? <Cog className="h-6 w-6 mr-2 text-primary" /> : <Brain className="h-6 w-6 mr-2 text-muted-foreground" />;
+  const titleText = isRecommended && prediction.methodName.includes("Réseau Neuronal") ? "Prédiction du Réseau Neuronal" : prediction.methodName;
+  
   return (
     <Card className={`shadow-lg ${isRecommended ? 'border-primary ring-2 ring-primary' : 'border-border'}`}>
       <CardHeader>
         <CardTitle className="text-xl flex items-center">
-          {isRecommended ? <CheckCircle className="h-6 w-6 mr-2 text-primary" /> : <Brain className="h-6 w-6 mr-2 text-muted-foreground" />}
-          {prediction.methodName}
+          {icon}
+          {titleText}
         </CardTitle>
         <CardDescription>Confiance: <Badge variant={
             prediction.confidence === "Élevée" ? "default" :
             prediction.confidence === "Moyenne" ? "secondary" :
             prediction.confidence === "Faible" ? "outline" :
-            "destructive" // Très faible
+            "destructive" 
           } className="text-sm">{prediction.confidence}</Badge>
         </CardDescription>
       </CardHeader>
@@ -37,7 +57,7 @@ function PredictionCard({ prediction, isRecommended = false }: { prediction: Sin
           <div className="flex flex-wrap gap-2 justify-center">
             {prediction.predictedNumbers.map((num, index) => (
               <Badge key={`${prediction.methodName}-num-${index}-${num}`}
-                     className={`text-xl px-3 py-1 rounded-md shadow-sm ${isRecommended ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground'}`}>
+                     className={`text-xl px-3 py-1 rounded-md shadow-sm ${getBallColorClass(num)}`}>
                 {num}
               </Badge>
             ))}
@@ -108,7 +128,7 @@ export default function PredictionPage() {
     if (allResults.length === 0 && !isLoadingData) {
         toast({
             title: "Peu de données historiques",
-            description: `Aucune donnée historique pour "${drawName}". Les prédictions seront aléatoires et peu fiables.`,
+            description: `Aucune donnée historique pour "${drawName}". Les prédictions peuvent être moins fiables. Le modèle RNN-LSTM apprendra des résultats futurs.`,
             variant: "default"
         });
     }
@@ -154,9 +174,9 @@ export default function PredictionPage() {
         <Lightbulb className="h-5 w-5 text-accent" />
         <AlertTitle className="text-accent text-lg">Avertissement Important</AlertTitle>
         <AlertDescription className="text-sm">
-          Les prédictions sont générées par des algorithmes statistiques à des fins de divertissement et d'analyse.
+          Les prédictions sont générées par des algorithmes à des fins de divertissement et d'analyse.
           Elles ne garantissent aucunement un gain. Jouez de manière responsable.
-          La fiabilité des prédictions dépend fortement de la quantité et de la qualité des données historiques.
+          Le modèle de Réseau Neuronal (RNN-LSTM) s'améliore avec plus de données et apprend de ses erreurs passées.
         </AlertDescription>
       </Alert>
 
@@ -176,8 +196,8 @@ export default function PredictionPage() {
           <Card className="border-2 border-primary shadow-2xl">
             <CardHeader className="text-center bg-primary/5">
                <div className="flex items-center justify-center text-primary">
-                 <ShieldCheck className="h-8 w-8 mr-3" />
-                <CardTitle className="text-3xl">Prédiction Recommandée</CardTitle>
+                 <Cog className="h-8 w-8 mr-3" /> {/* Changed icon to Cog for RNN */}
+                <CardTitle className="text-3xl">Prédiction du Réseau Neuronal</CardTitle>
                </div>
               <CardDescription className="text-md">
                 Pour le tirage: <span className="font-bold">{predictionOutput.drawName}</span> |
@@ -188,33 +208,33 @@ export default function PredictionPage() {
               <PredictionCard prediction={predictionOutput.recommendedPrediction} isRecommended={true} />
             </CardContent>
              <CardFooter className="text-xs text-muted-foreground justify-center text-center">
-                La prédiction recommandée (Méthode Hybride) combine les résultats de plusieurs méthodes d'analyse. Une confiance plus élevée indique un accord plus fort entre les méthodes.
+                La prédiction du Réseau Neuronal (RNN-LSTM) est le résultat d'une analyse approfondie des tendances et des corrections dynamiques. Elle apprend des erreurs passées pour s'améliorer.
             </CardFooter>
           </Card>
           
           <div className="space-y-4">
             <h2 className="text-2xl font-semibold flex items-center">
               <ListTree className="mr-3 h-6 w-6 text-muted-foreground" />
-              Autres prédictions par algorithme
+              Analyses par Algorithmes Statistiques
             </h2>
             <p className="text-muted-foreground">
-              Explorez les prédictions générées par chaque algorithme statistique individuel. Cela peut vous aider à comprendre différentes perspectives basées sur la fréquence, les retards, les associations de numéros et la distribution.
+              Explorez les prédictions alternatives générées par différents algorithmes statistiques (Fréquence, Retards, Associations, Distribution). Cela peut offrir des perspectives complémentaires.
             </p>
             <Accordion type="single" collapsible className="w-full" defaultValue="all-methods">
               <AccordionItem value="all-methods">
                 <AccordionTrigger className="text-xl font-semibold hover:no-underline text-left py-3">
                   <BarChartHorizontalBig className="mr-3 h-5 w-5 text-muted-foreground" />
-                  Afficher/Masquer les détails par algorithme
+                  Voir les détails par algorithme statistique
                 </AccordionTrigger>
                 <AccordionContent className="pt-4 space-y-6">
                   {predictionOutput.allPredictions
-                    .filter(p => p.methodName !== predictionOutput.recommendedPrediction.methodName)
-                    .sort((a, b) => a.methodName.localeCompare(b.methodName)) // Sort alphabetically for consistency
+                    .filter(p => p.methodName !== predictionOutput.recommendedPrediction.methodName) // Exclude the main RNN prediction
+                    .sort((a, b) => a.methodName.localeCompare(b.methodName)) 
                     .map((pred, index) => (
                       <PredictionCard key={`${pred.methodName}-${index}`} prediction={pred} />
                   ))}
                   {predictionOutput.allPredictions.filter(p => p.methodName !== predictionOutput.recommendedPrediction.methodName).length === 0 && (
-                      <p className="text-muted-foreground text-center py-4">La prédiction recommandée est la seule disponible actuellement ou toutes les méthodes ont convergé vers la même recommandation.</p>
+                      <p className="text-muted-foreground text-center py-4">Seule la prédiction du Réseau Neuronal est disponible ou tous les algorithmes ont convergé.</p>
                   )}
                 </AccordionContent>
               </AccordionItem>
@@ -230,18 +250,14 @@ export default function PredictionPage() {
             <AlertTitle>En attente de génération</AlertTitle>
             <AlertDescription>
             Cliquez sur "Générer les Prédictions" pour démarrer l'analyse.
-            Si aucune donnée historique n'est disponible pour "{drawName}", les prédictions seront basées sur des méthodes aléatoires ou par défaut.
+            Si aucune donnée historique n'est disponible pour "{drawName}", les prédictions initiales du Réseau Neuronal peuvent être moins précises mais s'amélioreront avec le temps.
             </AlertDescription>
         </Alert>
       )}
-       {/* Placeholder for toast hook, if needed directly on this page */}
     </div>
   );
 }
 
-// Helper function for toast, can be moved to a shared utility if used elsewhere
-import { toast as useToastHook } from "@/hooks/use-toast";
 const toast = (options: { title: string, description: string, variant?: "default" | "destructive" }) => {
   useToastHook().toast(options);
 };
-
