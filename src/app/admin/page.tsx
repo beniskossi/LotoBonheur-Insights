@@ -43,17 +43,19 @@ const lotteryResultSchema = z.object({
       return false;
     }
   }, { message: "Date invalide. Format YYYY-MM-DD attendu." }),
-  gagnants: z.array(z.number().int().min(1, "Numéro trop petit.").max(90, "Numéro trop grand.")).length(5, "5 numéros gagnants requis."),
-  machine: z.array(z.number().int().min(0, "Numéro machine doit être >= 0").max(90, "Numéro machine trop grand."))
+  gagnants: z.array(z.number().int().min(1, "Numéro gagnant doit être >= 1 et <= 90.").max(90, "Numéro gagnant doit être >= 1 et <= 90.")).length(5, "5 numéros gagnants sont requis."),
+  machine: z.array(z.number().int().min(0, "Numéro machine doit être >= 0 et <= 90.").max(90, "Numéro machine doit être >= 0 et <= 90."))
     .refine(arr => {
-      if (arr.length === 0) return true;
+      if (arr.length === 0) return true; // Empty array is valid
       if (arr.length === 5) {
+        // Allow five 0s (as a way to signify no numbers, will be normalized to [])
+        // OR five valid numbers between 1 and 90.
         if (arr.every(num => num === 0)) return true;
         return arr.every(num => num >= 1 && num <= 90);
       }
-      return false;
+      return false; // Any other length is invalid
     }, {
-      message: "Numéros machine: vide, ou cinq '0', ou 5 numéros (1-90).",
+      message: "Numéros machine: un tableau vide, ou cinq zéros [0,0,0,0,0], ou 5 numéros (1-90).",
     }).optional().default([]),
 });
 type LotteryFormValues = z.infer<typeof lotteryResultSchema>;
@@ -72,31 +74,36 @@ const NumberArrayInput: React.FC<NumberArrayInputProps> = ({ value: rhfValue, on
   const [inputValue, setInputValue] = useState(Array.isArray(rhfValue) ? rhfValue.join(',') : '');
 
   useEffect(() => {
-    setInputValue(Array.isArray(rhfValue) ? rhfValue.join(',') : '');
-  }, [rhfValue]);
+    // This effect updates the local inputValue if the React Hook Form value (rhfValue) changes.
+    // This is important for form resets or programmatic value changes.
+    // It ensures the displayed input matches the canonical RHF state (e.g., "1,2,3").
+    const canonicalDisplayValue = Array.isArray(rhfValue) ? rhfValue.join(',') : '';
+    if (inputValue !== canonicalDisplayValue) {
+      setInputValue(canonicalDisplayValue);
+    }
+  }, [rhfValue]); // Removed inputValue from dependencies to avoid potential loops with RHF updates.
 
   const parseNumbersString = (str: string): number[] => {
     if (!str.trim()) return [];
     return str.split(/[,;\s]+/)
               .map(s => s.trim())
-              .filter(s => s.length > 0) 
+              .filter(s => s.length > 0)
               .map(s => parseInt(s, 10))
               .filter(n => !isNaN(n) && n >= 0 && n <= 90);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawValue = e.target.value;
-    setInputValue(rawValue);
-    // Allow only digits, commas, and spaces for better UX, parse on blur/submit
-    if (/^[\d,\s]*$/.test(rawValue)) {
-        rhfOnChange(parseNumbersString(rawValue)); // Update RHF immediately for live validation feedback if desired
-    }
+    // Update local state for display as the user types.
+    // Do NOT call rhfOnChange here to avoid premature validation/reformatting during typing.
+    setInputValue(e.target.value);
   };
 
   const handleInputBlur = () => {
-    // Ensure final parsed value is set on blur
-    rhfOnChange(parseNumbersString(inputValue));
-    rhfOnBlur(); // Trigger RHF's onBlur
+    // On blur, parse the current input string and update RHF.
+    const parsedNumbers = parseNumbersString(inputValue);
+    rhfOnChange(parsedNumbers);
+    rhfOnBlur(); // Trigger RHF's onBlur for its own validation lifecycle.
+    // The useEffect will handle updating inputValue to the canonical form if rhfValue changed.
   };
 
   return (
@@ -104,8 +111,8 @@ const NumberArrayInput: React.FC<NumberArrayInputProps> = ({ value: rhfValue, on
       id={id}
       placeholder={placeholder}
       onChange={handleInputChange}
-      onBlur={handleInputBlur} // Use RHF's onBlur
-      value={inputValue} // Controlled by local state for typing flexibility
+      onBlur={handleInputBlur}
+      value={inputValue} // Controlled by local state for typing
       aria-label={ariaLabel}
       disabled={disabled}
     />
@@ -280,7 +287,7 @@ export default function AdminPage() {
   };
 
 
-  const handleExportSubmit = async (formatType: 'json') => { 
+  const handleExportSubmit = async (formatType: 'json') => {
     startExportTransition(async () => {
       let result;
       const filter = exportFilterDrawName === "all" ? null : exportFilterDrawName;
@@ -391,7 +398,7 @@ export default function AdminPage() {
   };
 
   const handleResetCategoryClick = () => {
-    if (!categoryToReset || categoryToReset === "all") { 
+    if (!categoryToReset || categoryToReset === "all") {
         toast({title: "Aucune catégorie valide", description: "Veuillez sélectionner une catégorie spécifique à réinitialiser.", variant: "destructive"});
         return;
     }
@@ -443,7 +450,7 @@ export default function AdminPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 md:grid-cols-1 gap-6"> 
+      <div className="grid grid-cols-1 md:grid-cols-1 gap-6">
          {/* JSON Import/Export */}
         <Card>
             <CardHeader><CardTitle className="flex items-center"><FileJson className="mr-2"/>Importer/Exporter (JSON)</CardTitle></CardHeader>
@@ -453,7 +460,8 @@ export default function AdminPage() {
                     <Input id="jsonFile" type="file" accept=".json,application/json" onChange={handleJsonFileChange} className="mt-1" />
                     <p className="text-xs text-muted-foreground mt-1">
                         Format attendu: un tableau d'objets. Chaque objet: {" { \"draw_name\": \"NOM\", \"date\": \"YYYY-MM-DD\", \"gagnants\": [n1,n2,n3,n4,n5], \"machine\": [m1,m2,m3,m4,m5] ou [] } "}.
-                        Dates alternatives (ex: DD/MM/YYYY) sont aussi acceptées.
+                        Les dates alternatives (ex: DD/MM/YYYY, MM/DD/YYYY) sont aussi acceptées et seront normalisées.
+                        Les numéros machine sont optionnels; un tableau vide `[]` est utilisé si absents.
                     </p>
                 </div>
                 <div className="mt-2">
@@ -707,3 +715,4 @@ const FormItemNumberArray: React.FC<FormItemNumberArrayProps> = ({ control, name
         {errors[name]?.message && <p className="text-destructive text-sm">{errors[name].message as string}</p>}
     </div>
 );
+
