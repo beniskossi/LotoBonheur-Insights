@@ -1,3 +1,4 @@
+
 'use client';
 
 import type { LotteryResult } from '@/types/lottery';
@@ -12,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Lightbulb, ShieldCheck, Wand2, Info, Brain, CheckCircle, BarChartHorizontalBig } from "lucide-react";
+import { Lightbulb, ShieldCheck, Wand2, Info, Brain, CheckCircle, BarChartHorizontalBig, ListTree } from "lucide-react";
 
 function PredictionCard({ prediction, isRecommended = false }: { prediction: SinglePrediction, isRecommended?: boolean }) {
   return (
@@ -105,8 +106,6 @@ export default function PredictionPage() {
         return;
     }
     if (allResults.length === 0 && !isLoadingData) {
-        // Allow generating predictions even with no historical data (flow handles this with random)
-        // but inform the user.
         toast({
             title: "Peu de données historiques",
             description: `Aucune donnée historique pour "${drawName}". Les prédictions seront aléatoires et peu fiables.`,
@@ -131,9 +130,8 @@ export default function PredictionPage() {
       setIsLoadingPrediction(false);
     }
 
-  }, [allResults, drawName, isLoadingData]); // Added toast
+  }, [allResults, drawName, isLoadingData]);
 
-  // Auto-generate prediction when data is loaded and drawName is set, but only if no prediction exists yet
   useEffect(() => {
     if (!isLoadingData && drawName && allResults && !predictionOutput && !isLoadingPrediction && !error) {
        handleGeneratePrediction();
@@ -190,28 +188,38 @@ export default function PredictionPage() {
               <PredictionCard prediction={predictionOutput.recommendedPrediction} isRecommended={true} />
             </CardContent>
              <CardFooter className="text-xs text-muted-foreground justify-center text-center">
-                La prédiction recommandée combine les résultats de plusieurs méthodes d'analyse. Une confiance plus élevée indique un accord plus fort entre les méthodes.
+                La prédiction recommandée (Méthode Hybride) combine les résultats de plusieurs méthodes d'analyse. Une confiance plus élevée indique un accord plus fort entre les méthodes.
             </CardFooter>
           </Card>
-
-          <Accordion type="single" collapsible className="w-full" defaultValue="all-methods">
-            <AccordionItem value="all-methods">
-              <AccordionTrigger className="text-2xl font-semibold hover:no-underline text-left">
-                <BarChartHorizontalBig className="mr-3 h-6 w-6 text-muted-foreground" />
-                Détail des autres méthodes de prédiction
-              </AccordionTrigger>
-              <AccordionContent className="pt-4 space-y-6">
-                {predictionOutput.allPredictions
-                  .filter(p => p.methodName !== predictionOutput.recommendedPrediction.methodName)
-                  .map((pred, index) => (
-                    <PredictionCard key={`${pred.methodName}-${index}`} prediction={pred} />
-                ))}
-                 {predictionOutput.allPredictions.filter(p => p.methodName !== predictionOutput.recommendedPrediction.methodName).length === 0 && (
-                    <p className="text-muted-foreground text-center py-4">La prédiction recommandée est la seule disponible actuellement ou toutes les méthodes ont convergé vers la même recommandation.</p>
-                )}
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
+          
+          <div className="space-y-4">
+            <h2 className="text-2xl font-semibold flex items-center">
+              <ListTree className="mr-3 h-6 w-6 text-muted-foreground" />
+              Autres prédictions par algorithme
+            </h2>
+            <p className="text-muted-foreground">
+              Explorez les prédictions générées par chaque algorithme statistique individuel. Cela peut vous aider à comprendre différentes perspectives basées sur la fréquence, les retards, les associations de numéros et la distribution.
+            </p>
+            <Accordion type="single" collapsible className="w-full" defaultValue="all-methods">
+              <AccordionItem value="all-methods">
+                <AccordionTrigger className="text-xl font-semibold hover:no-underline text-left py-3">
+                  <BarChartHorizontalBig className="mr-3 h-5 w-5 text-muted-foreground" />
+                  Afficher/Masquer les détails par algorithme
+                </AccordionTrigger>
+                <AccordionContent className="pt-4 space-y-6">
+                  {predictionOutput.allPredictions
+                    .filter(p => p.methodName !== predictionOutput.recommendedPrediction.methodName)
+                    .sort((a, b) => a.methodName.localeCompare(b.methodName)) // Sort alphabetically for consistency
+                    .map((pred, index) => (
+                      <PredictionCard key={`${pred.methodName}-${index}`} prediction={pred} />
+                  ))}
+                  {predictionOutput.allPredictions.filter(p => p.methodName !== predictionOutput.recommendedPrediction.methodName).length === 0 && (
+                      <p className="text-muted-foreground text-center py-4">La prédiction recommandée est la seule disponible actuellement ou toutes les méthodes ont convergé vers la même recommandation.</p>
+                  )}
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          </div>
 
         </div>
       )}
@@ -232,7 +240,8 @@ export default function PredictionPage() {
 }
 
 // Helper function for toast, can be moved to a shared utility if used elsewhere
-import { toast as useToastHook } from "@/hooks/use-toast"; // Assuming toast hook is set up
+import { toast as useToastHook } from "@/hooks/use-toast";
 const toast = (options: { title: string, description: string, variant?: "default" | "destructive" }) => {
   useToastHook().toast(options);
 };
+
