@@ -14,34 +14,34 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Lightbulb, ShieldCheck, Wand2, Info, Brain, CheckCircle, BarChartHorizontalBig, ListTree, Cog } from "lucide-react";
-import { toast as useToastHook } from "@/hooks/use-toast";
+import { useToast as useToastHook } from "@/hooks/use-toast";
 
 const getBallColorClass = (number: number): string => {
   if (number >= 1 && number <= 9) { // Blanc
-    return 'bg-white text-black';
+    return 'bg-white text-black border border-gray-300';
   } else if (number >= 10 && number <= 19) { // Bleu clair
-    return 'bg-blue-300 text-blue-800';
+    return 'bg-blue-300 text-blue-800 border border-blue-400';
   } else if (number >= 20 && number <= 29) { // Bleu foncé
-    return 'bg-blue-700 text-blue-100';
+    return 'bg-blue-700 text-blue-100 border border-blue-800';
   } else if (number >= 30 && number <= 39) { // Vert clair
-    return 'bg-green-300 text-green-800';
+    return 'bg-green-300 text-green-800 border border-green-400';
   } else if (number >= 40 && number <= 49) { // Violet
-    return 'bg-purple-500 text-white';
+    return 'bg-purple-500 text-white border border-purple-600';
   } else if (number >= 50 && number <= 59) { // Indigo
-    return 'bg-indigo-500 text-white';
+    return 'bg-indigo-500 text-white border border-indigo-600';
   } else if (number >= 60 && number <= 69) { // Jaune
-    return 'bg-yellow-400 text-yellow-800';
+    return 'bg-yellow-400 text-yellow-800 border border-yellow-500';
   } else if (number >= 70 && number <= 79) { // Orange
-    return 'bg-orange-500 text-white';
+    return 'bg-orange-500 text-white border border-orange-600';
   } else if (number >= 80 && number <= 90) { // Rouge
-    return 'bg-red-600 text-white';
+    return 'bg-red-600 text-white border border-red-700';
   }
-  return 'bg-muted text-muted-foreground'; // Default fallback
+  return 'bg-muted text-muted-foreground border border-gray-400'; // Default fallback
 };
 
 function PredictionCard({ prediction, isRecommended = false }: { prediction: SinglePrediction, isRecommended?: boolean }) {
   const icon = isRecommended ? <Cog className="h-6 w-6 mr-2 text-primary" /> : <Brain className="h-6 w-6 mr-2 text-muted-foreground" />;
-  const titleText = isRecommended && prediction.methodName.includes("Réseau Neuronal") ? "Prédiction du Réseau Neuronal" : prediction.methodName;
+  const titleText = isRecommended && prediction.methodName.includes("Réseau Neuronal") ? "Prédiction du Réseau Neuronal (RNN-LSTM)" : prediction.methodName;
   
   return (
     <Card className={`shadow-lg ${isRecommended ? 'border-primary ring-2 ring-primary' : 'border-border'}`}>
@@ -64,7 +64,7 @@ function PredictionCard({ prediction, isRecommended = false }: { prediction: Sin
           <div className="flex flex-wrap gap-2 justify-center">
             {prediction.predictedNumbers.map((num, index) => (
               <Badge key={`${prediction.methodName}-num-${index}-${num}`}
-                     className={`text-xl px-3 py-1 rounded-md shadow-sm ${getBallColorClass(num)}`}>
+                     className={`text-xl px-3 py-1 rounded-full shadow-sm ${getBallColorClass(num)} w-10 h-10 flex items-center justify-center`}>
                 {num}
               </Badge>
             ))}
@@ -87,6 +87,9 @@ export default function PredictionPage() {
   const [isLoadingPrediction, setIsLoadingPrediction] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [drawName, setDrawName] = useState<string | undefined>(undefined);
+  const [initialPredictionAttempted, setInitialPredictionAttempted] = useState(false);
+  const { toast: showToast } = useToastHook();
+
 
   useEffect(() => {
     if (drawSlug) {
@@ -97,6 +100,9 @@ export default function PredictionPage() {
   const fetchResults = useCallback(async () => {
     setIsLoadingData(true);
     setError(null);
+    // Reset prediction state when fetching new base data
+    setPredictionOutput(null);
+    setInitialPredictionAttempted(false);
     try {
       const response = await fetch('/api/results');
       if (!response.ok) {
@@ -133,17 +139,18 @@ export default function PredictionPage() {
         return;
     }
     if (allResults.length === 0 && !isLoadingData) {
-        toast({
+        showToast({
             title: "Peu de données historiques",
             description: `Aucune donnée historique pour "${drawName}". Les prédictions peuvent être moins fiables. Le modèle RNN-LSTM apprendra des résultats futurs.`,
             variant: "default"
         });
     }
 
-
     setError(null);
     setIsLoadingPrediction(true);
-    setPredictionOutput(null);
+    // DO NOT setPredictionOutput(null) here at the start of the call, as it can cause loops
+    // if the effect re-triggers based on predictionOutput becoming null.
+    // Let the new prediction naturally overwrite the old one.
 
     const filteredResults = allResults.filter(result => result.draw_name === drawName);
 
@@ -153,17 +160,19 @@ export default function PredictionPage() {
     } catch (err: any) {
       setError(`Erreur lors de la génération de la prédiction: ${err.message}`);
       console.error(err);
+      setPredictionOutput(null); // Set to null on error so UI can react appropriately
     } finally {
       setIsLoadingPrediction(false);
     }
-
-  }, [allResults, drawName, isLoadingData]);
+  }, [allResults, drawName, isLoadingData, showToast]);
 
   useEffect(() => {
-    if (!isLoadingData && drawName && allResults && !predictionOutput && !isLoadingPrediction && !error) {
+    // This effect is for auto-generating the prediction when data is first loaded.
+    if (!isLoadingData && drawName && allResults.length >= 0 && !predictionOutput && !initialPredictionAttempted && !isLoadingPrediction && !error) {
        handleGeneratePrediction();
+       setInitialPredictionAttempted(true); // Mark that the initial attempt has been made
     }
-  }, [isLoadingData, drawName, allResults, predictionOutput, isLoadingPrediction, error, handleGeneratePrediction]);
+  }, [isLoadingData, drawName, allResults, predictionOutput, initialPredictionAttempted, isLoadingPrediction, error, handleGeneratePrediction]);
 
 
   if (!drawName && !isLoadingData) {
@@ -195,7 +204,7 @@ export default function PredictionPage() {
       </div>
 
       {isLoadingData && <div className="pt-4"><LoadingSpinner message="Chargement des données historiques..." /></div>}
-      {error && <ErrorMessage message={error} />}
+      {error && !isLoadingPrediction && <ErrorMessage message={error} />} {/* Show error only if not actively loading a new prediction */}
       {isLoadingPrediction && <div className="pt-4"><LoadingSpinner message="Génération des prédictions IA..." /></div>}
 
       {predictionOutput && !isLoadingPrediction && (
@@ -204,7 +213,7 @@ export default function PredictionPage() {
             <CardHeader className="text-center bg-primary/5">
                <div className="flex items-center justify-center text-primary">
                  <Cog className="h-8 w-8 mr-3" />
-                <CardTitle className="text-3xl">Prédiction du Réseau Neuronal</CardTitle>
+                <CardTitle className="text-3xl">Prédiction du Réseau Neuronal (RNN-LSTM)</CardTitle>
                </div>
               <CardDescription className="text-md">
                 Pour le tirage: <span className="font-bold">{predictionOutput.drawName}</span> |
@@ -231,7 +240,7 @@ export default function PredictionPage() {
               <AccordionItem value="all-methods">
                 <AccordionTrigger className="text-xl font-semibold hover:no-underline text-left py-3">
                   <BarChartHorizontalBig className="mr-3 h-5 w-5 text-muted-foreground" />
-                  Afficher les prédictions par algorithme statistique
+                  Détail des prédictions par algorithme statistique
                 </AccordionTrigger>
                 <AccordionContent className="pt-4 space-y-6">
                   {predictionOutput.allPredictions
@@ -265,6 +274,9 @@ export default function PredictionPage() {
   );
 }
 
+// Note: The global toast function below is not used by handleGeneratePrediction anymore.
+// It's kept in case it's used elsewhere or was intended for a different purpose.
 const toast = (options: { title: string, description: string, variant?: "default" | "destructive" }) => {
   useToastHook().toast(options);
 };
+
